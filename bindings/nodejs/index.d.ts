@@ -1,19 +1,3 @@
-/*
- * Copyright 2025 TiDB Cloud
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 /* tslint:disable */
 /* eslint-disable */
 
@@ -27,7 +11,7 @@ export declare class ValueOptions {
   variantAsObject: boolean
 }
 export declare class Client {
-  /** Create a new TiDB Cloud Lake client with a given DSN. */
+  /** Create a new lake client with a given DSN. */
   constructor(dsn: string, opts?: ValueOptions | undefined | null)
   /** Get a connection from the client. */
   getConn(): Promise<Connection>
@@ -35,7 +19,7 @@ export declare class Client {
 export declare class Connection {
   /** Get the connection information. */
   info(): Promise<ConnectionInfo>
-  /** Get the TiDB Cloud Lake version. */
+  /** Get the version. */
   version(): Promise<string>
   formatSql(sql: string, params?: Params | undefined | null): string
   /** Get the last executed query ID */
