@@ -1,0 +1,45 @@
+[workspace]
+default-members = ["core", "sql", "driver", "macros", "cli"]
+members = [
+    "core",
+    "sql",
+    "driver",
+    "macros",
+    "cli",
+    "bindings/python",
+    "bindings/nodejs",
+    "ttc",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.33.7"
+license = "Apache-2.0"
+authors = ["TiDB Cloud Authors <engineering@tidbcloud.com>"]
+categories = ["database"]
+keywords = ["lake", "tidbcloud", "database", "rust"]
+repository = "https://github.com/tidbcloud/lakesql"
+
+[workspace.dependencies]
+lake-client = { path = "core", version = "0.33.7" }
+lake-driver = { path = "driver", version = "0.33.7" }
+lake-driver-core = { path = "sql", version = "0.33.7" }
+lake-driver-macros = { path = "macros", version = "0.33.7" }
+
+jsonb = { version = "0.5.6" }
+tokio-stream = "0.1"
+chrono = { version = "0.4.40", default-features = false, features = ["clock"] }
+chrono-tz = { version = "0.10.4" }
+jiff = { version = "0.2.10", features = ["tzdb-bundle-always"] }
+arrow = { version = "56" }
+arrow-array = { version = "56" }
+arrow-schema = { version = "56" }
+arrow-flight = { version = "56", features = ["flight-sql-experimental"] }
+arrow-ipc = { version = "56", features = ["lz4", "zstd"]}
+tonic = { version = "0.13", default-features = false, features = [
+    "transport",
+    "codegen",
+    "tls-webpki-roots",
+    "prost",
+] }

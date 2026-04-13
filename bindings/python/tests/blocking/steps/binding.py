@@ -1,0 +1,537 @@
+# Copyright 2025 TiDB Cloud
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+import gc
+from datetime import datetime, date, timedelta, timezone
+from decimal import Decimal
+import time
+from time import sleep
+import unittest
+
+tc = unittest.TestCase()
+
+from behave import given, when, then
+
+os.environ["LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS"] = "1"
+os.environ["RUST_LOG"] = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=debug"
+import tidbcloudlake_driver
+
+NOW = int(time.time())
+DB_VERSION = os.getenv("DB_VERSION")
+if DB_VERSION is not None:
+    DB_VERSION = tuple(map(int, DB_VERSION.split(".")))
+else:
+    DB_VERSION = (100, 0, 0)
+
+DRIVER_VERSION = os.getenv("DRIVER_VERSION")
+if DRIVER_VERSION is not None:
+    DRIVER_VERSION = tuple(map(int, DRIVER_VERSION.split(".")))
+else:
+    DRIVER_VERSION = (100, 0, 0)
+
+if DRIVER_VERSION > (0, 30, 3):
+    default_tzinfo = timezone.utc
+else:
+    default_tzinfo = None
+
+
+@given("A new Lake Driver Client")
+def _(context):
+    dsn = os.getenv(
+        "TEST_LAKE_DSN",
+        "lake://root:root@localhost:8000/?sslmode=disable",
+    )
+    if os.getenv("QUERY_RESULT_FORMAT") == "arrow":
+        dsn += "&query_result_format=arrow"
+    client = tidbcloudlake_driver.BlockingLakeClient(dsn)
+    context.conn = client.get_conn()
+    context.client = client
+
+
+@when("Create a test table")
+def _(context):
+    context.conn.exec("DROP TABLE IF EXISTS test")
+    context.conn.exec(
+        """
+        CREATE TABLE test (
+            i64 Int64,
+            u64 UInt64,
+            f64 Float64,
+            s   String,
+            s2  String,
+            d   Date,
+            t   DateTime
+        )
+        """
+    )
+
+
+@then("Select string {input} should be equal to {output}")
+def _(context, input, output):
+    row = context.conn.query_row(f"SELECT '{input}'")
+    value = row.values()[0]
+    assert output == value, f"output: {output}"
+
+
+@then("Select params binding")
+def _(context):
+    # Test with positional parameters
+    row = context.conn.query_row("SELECT ?, ?, ?, ?", (3, False, 4, "55"))
+    assert row.values() == (3, False, 4, "55"), f"output: {row.values()}"
+
+    # Test with named parameters
+    row = context.conn.query_row(
+        "SELECT :a, :b, :c, :d", {"a": 3, "b": False, "c": 4, "d": "55"}
+    )
+    assert row.values() == (3, False, 4, "55"), f"output: {row.values()}"
+
+    row = context.conn.query_row("SELECT ?", 4)
+    assert row.values() == (4,), f"output: {row.values()}"
+
+    # Test with positional parameters again
+    row = context.conn.query_row("SELECT ?, ?, ?, ?", (3, False, 4, "55"))
+    assert row.values() == (3, False, 4, "55"), f"output: {row.values()}"
+
+
+@then("Select types should be expected native types")
+def _(context):
+    # Binary
+    row = context.conn.query_row("select to_binary('xyz')")
+    assert row.values() == (b"xyz",), f"Binary: {row.values()}"
+
+    # Interval
+    row = context.conn.query_row("select to_interval('1 microseconds')")
+    assert row.values() == (timedelta(microseconds=1),), f"Interval: {row.values()}"
+
+    # Decimal
+    row = context.conn.query_row("SELECT 15.7563::Decimal(8,4), 2.0+3.0", params=[8, 4])
+    assert row.values() == (
+        Decimal("15.7563"),
+        Decimal("5.0"),
+    ), f"Decimal: {row.values()}"
+
+    # Array
+    row = context.conn.query_row("select [10::Decimal(15,2), 1.1+2.3]")
+    assert row.values() == ([Decimal("10.00"), Decimal("3.40")],), (
+        f"Array: {row.values()}"
+    )
+
+    import sys
+
+    if (
+        DRIVER_VERSION > (0, 30, 3)
+        and DB_VERSION > (1, 2, 836)
+        and sys.version_info.minor >= 8
+    ):
+        tz = "Asia/Shanghai"
+        if sys.version_info.minor >= 9:
+            from zoneinfo import ZoneInfo
+
+            tz_expected = ZoneInfo(tz)
+        else:
+            tz_expected = timezone(timedelta(hours=8))
+        context.conn.exec(f"set timezone='{tz}'")
+        row = context.conn.query_row("select to_datetime('2024-04-16 12:34:56.789')")
+        exp = datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=tz_expected)
+        assert row.values()[0] == exp, f"datetime(session level tz): {row.values()}"
+        context.conn.exec("set timezone='UTC'")
+
+        if DB_VERSION >= (1, 2, 839):
+            row = context.conn.query_row(
+                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789')"
+            )
+            assert row.values()[0] == exp, f"datetime(query level tz): {row.values()}"
+
+            row = context.conn.query_row(
+                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789'), 10"
+            )
+            assert row.values()[0] == exp, (
+                f"datetime in Tuple: {row.values()[0]} != {exp}"
+            )
+
+        tz_expected = timezone(timedelta(hours=6))
+        row = context.conn.query_row(
+            f"settings(timezone='{tz}') select to_timestamp_tz('2024-04-16 12:34:56.789 +0600')"
+        )
+        exp = datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=tz_expected)
+        exp_bug = datetime(2024, 4, 16, 18, 34, 56, 789000, tzinfo=tz_expected)
+        if (
+            DB_VERSION >= (1, 2, 840)
+            and not os.getenv("QUERY_RESULT_FORMAT") == "arrow"
+        ) or (
+            DB_VERSION >= (1, 2, 844) and os.getenv("QUERY_RESULT_FORMAT") == "arrow"
+        ):
+            assert row.values()[0] == exp, f"timestamp_tz: {row.values()[0]} {exp}"
+        else:
+            assert row.values()[0] == exp_bug, (
+                f"timestamp_tz: {row.values()[0]} {exp_bug}"
+            )
+
+    if DRIVER_VERSION > (0, 31, 0) and DB_VERSION > (1, 2, 841):
+        row = context.conn.query_row("SELECT st_point(60,37)")
+        assert row.values()[0] == '{"type": "Point", "coordinates": [60,37]}', (
+            f"geography: {row.values()}"
+        )
+        row = context.conn.query_row(
+            "settings(geometry_output_format='WKT') SELECT st_point(60,37)"
+        )
+        assert row.values()[0] == "POINT(60 37)", f"geography: {row.values()}"
+
+    if DRIVER_VERSION >= (0, 33, 1):  # quote change to `"`
+        # Map
+        row = context.conn.query_row("select {'xx':to_date('2020-01-01')}")
+        assert row.values() == ({"xx": date(2020, 1, 1)},), f"Map: {row.values()}"
+
+        # Tuple
+        row = context.conn.query_row(
+            "select (10, '20', to_datetime('2024-04-16 12:34:56.789'))"
+        )
+        assert row.values() == (
+            (
+                10,
+                "20",
+                datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=default_tzinfo),
+            ),
+        ), f"Tuple: {row.values()}"
+
+
+@then("Select numbers should iterate all rows")
+def _(context):
+    rows = context.conn.query_iter("SELECT number FROM numbers(5)")
+    ret = [row.values()[0] for row in rows]
+    expected = [0, 1, 2, 3, 4]
+    assert ret == expected, f"ret: {ret}"
+
+
+@then("Insert and Select should be equal")
+def _(context):
+    context.conn.exec(
+        r"""
+        INSERT INTO test VALUES
+            (-1, 1, 1.0, '\'', NULL, '2011-03-06', '2011-03-06 06:20:00'),
+            (-2, 2, 2.0, '"', '', '2012-05-31', '2012-05-31 11:20:00'),
+            (-3, 3, 3.0, '\\', 'NULL', '2016-04-04', '2016-04-04 11:30:00')
+        """
+    )
+    rows = context.conn.query_iter("SELECT * FROM test")
+    ret = [row.values() for row in rows]
+    expected = [
+        (
+            -1,
+            1,
+            1.0,
+            "'",
+            None,
+            date(2011, 3, 6),
+            datetime(2011, 3, 6, 6, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -2,
+            2,
+            2.0,
+            '"',
+            "",
+            date(2012, 5, 31),
+            datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -3,
+            3,
+            3.0,
+            "\\",
+            "NULL",
+            date(2016, 4, 4),
+            datetime(2016, 4, 4, 11, 30, tzinfo=default_tzinfo),
+        ),
+    ]
+    assert ret == expected, f"ret: {ret}"
+
+
+@then("Stream load and Select should be equal")
+def _(context):
+    values = [
+        ["-1", "1", "1.0", "'", "\\N", "2011-03-06", "2011-03-06T06:20:00Z"],
+        ["-2", "2", "2.0", '"', "", "2012-05-31", "2012-05-31T11:20:00Z"],
+        ["-3", "3", "3.0", "\\", "NULL", "2016-04-04", "2016-04-04T11:30:00Z"],
+    ]
+    progress = context.conn.stream_load("INSERT INTO test VALUES", values)
+    assert progress.write_rows == 3, f"progress.write_rows: {progress.write_rows}"
+
+    rows = context.conn.query_iter("SELECT * FROM test")
+    ret = [row.values() for row in rows]
+    expected = [
+        (
+            -1,
+            1,
+            1.0,
+            "'",
+            None,
+            date(2011, 3, 6),
+            datetime(2011, 3, 6, 6, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -2,
+            2,
+            2.0,
+            '"',
+            None,
+            date(2012, 5, 31),
+            datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -3,
+            3,
+            3.0,
+            "\\",
+            "NULL",
+            date(2016, 4, 4),
+            datetime(2016, 4, 4, 11, 30, tzinfo=default_tzinfo),
+        ),
+    ]
+    assert ret == expected, f"ret: {ret}"
+
+
+def test_load_file(context, load_method):
+    if DRIVER_VERSION >= (0, 28, 3) and DB_VERSION >= (1, 2, 792):
+        context.conn.exec("CREATE OR REPLACE DATABASE db1")
+        context.conn.exec("use db1")
+    context.conn.exec(
+        """
+        CREATE OR REPLACE TABLE test1 (
+            i64 Int64,
+            u64 UInt64,
+            f64 Float64,
+            s   String,
+            s2  String,
+            d   Date,
+            t   DateTime
+        )
+        """
+    )
+    progress = context.conn.load_file(
+        "INSERT INTO test1 VALUES FROM @_databend_load file_format = (type=csv)",
+        "tests/data/test.csv",
+    )
+    assert progress.write_rows == 3, (
+        f"{load_method} progress.write_rows: {progress.write_rows}"
+    )
+
+    rows = context.conn.query_iter("SELECT * FROM test1")
+    ret = [row.values() for row in rows]
+
+    quoted_empty = "" if DB_VERSION >= (1, 2, 866) else None
+
+    expected = [
+        (
+            -1,
+            1,
+            1.0,
+            "'",
+            None,
+            date(2011, 3, 6),
+            datetime(2011, 3, 6, 6, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -2,
+            2,
+            2.0,
+            '"',
+            quoted_empty,
+            date(2012, 5, 31),
+            datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
+        ),
+        (
+            -3,
+            3,
+            3.0,
+            "\\",
+            "NULL",
+            date(2016, 4, 4),
+            datetime(2016, 4, 4, 11, 30, tzinfo=default_tzinfo),
+        ),
+    ]
+    tc.assertEqual(ret, expected, load_method)
+
+
+@then("Load file with Stage and Select should be equal")
+def _(context):
+    test_load_file(context, "stage")
+
+
+@then("Load file with Streaming and Select should be equal")
+def _(context):
+    test_load_file(context, "streaming")
+
+
+@then("Temp table is cleaned up when conn is dropped")
+def _(context):
+    test_temp_table(context, 1)
+    if DRIVER_VERSION > (0, 30, 3):
+        test_temp_table(context, 0)
+
+
+def test_temp_table(context, by_close):
+    conn = context.client.get_conn()
+    db_name = f"temp_table_blocking_{by_close}_{NOW}"
+    conn.exec(f"create or replace database {db_name}")
+    conn.exec(f"use {db_name}")
+    for i in range(10):
+        conn.exec(f"create or replace temp table temp_{i}(a int)")
+        conn.exec(f"INSERT INTO temp_{i} VALUES (1),({i})")
+        rows = conn.query_iter(f"SELECT * FROM temp_{i}")
+        ret = [row.values() for row in rows]
+        expected = [(1,), (i,)]
+        assert ret == expected, f"ret: {ret}, expected: {expected}"
+
+    conn.exec("DROP TABLE temp_1")
+
+    # use conn which is stickied to the node
+    sql = f"SELECT COUNT(*) FROM system.temporary_tables where database = '{db_name}'"
+    rows = conn.query_iter(sql)
+    temp_table_count = list(rows)[0].values()[0]
+    assert temp_table_count == 9, f"temp_table_count before close = {temp_table_count}"
+
+    if by_close:
+        conn.close()
+    else:
+        del conn
+        gc.collect()
+        sleep(1)
+
+    # check 3 nodes behind nginx
+    for _ in range(3):
+        rows = context.conn.query_iter(sql)
+        temp_table_count = list(rows)[0].values()[0]
+        assert temp_table_count == 0, (
+            f"temp_table_count after close = {temp_table_count}, by_close={by_close}"
+        )
+
+
+@then("last_query_id should return query ID after execution")
+def _(context):
+    if DRIVER_VERSION < (0, 28, 3):
+        return
+
+    # Initially no query ID
+    assert context.conn.last_query_id() is None, "Initially should have no query ID"
+
+    # Execute a query
+    context.conn.query_row("SELECT 1")
+
+    # Should have a query ID now
+    query_id1 = context.conn.last_query_id()
+    assert query_id1 is not None, "Should have a query ID after query execution"
+    assert isinstance(query_id1, str), "Query ID should be a string"
+    assert len(query_id1) > 0, "Query ID should not be empty"
+
+    # Execute another query
+    context.conn.query_row("SELECT 2")
+
+    # Should have a different query ID
+    query_id2 = context.conn.last_query_id()
+    assert query_id2 is not None, "Should have a query ID after second query execution"
+    assert isinstance(query_id2, str), "Query ID should be a string"
+    assert query_id1 != query_id2, "Query IDs should be different"
+
+    # Test with queryIter
+    rows = context.conn.query_iter("SELECT number FROM numbers(3)")
+    list(rows)  # Consume the iterator
+    query_id3 = context.conn.last_query_id()
+    assert query_id3 is not None, "Should have a query ID after queryIter execution"
+    assert query_id2 != query_id3, "Query IDs should be different"
+
+    # Test with exec
+    context.conn.exec("SELECT 42")
+    query_id4 = context.conn.last_query_id()
+    assert query_id4 is not None, "Should have a query ID after exec execution"
+    assert query_id3 != query_id4, "Query IDs should be different"
+
+
+@then("killQuery should return error for non-existent query ID")
+def _(context):
+    if DRIVER_VERSION < (0, 28, 3):
+        return
+
+    # Test API signature
+    assert hasattr(context.conn, "kill_query"), "kill_query should be a method"
+    assert callable(getattr(context.conn, "kill_query")), (
+        "kill_query should be callable"
+    )
+
+    # Test killing non-existent query with valid UUID format
+    non_existent_query_id = "12345678-1234-1234-1234-123456789012"
+
+    try:
+        context.conn.kill_query(non_existent_query_id)
+        assert False, (
+            "kill_query should have raised an exception for non-existent query ID"
+        )
+    except Exception as err:
+        # Should get an error for non-existent query
+        assert isinstance(err, Exception), "Should raise an Exception"
+        assert isinstance(err.args[0], str) and len(err.args[0]) > 0, (
+            "Should return meaningful error message"
+        )
+        print(f"Expected error for non-existent query: {err}")
+
+
+@then("Query should not timeout")
+def _(context):
+    if not (DRIVER_VERSION > (0, 30, 3) and DB_VERSION >= (1, 2, 709)):
+        print("SKIP")
+        return
+
+    dsn = "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3"
+    client = tidbcloudlake_driver.BlockingLakeClient(dsn)
+
+    N = 10000
+    conn = client.get_conn()
+    conn.exec("set http_handler_result_timeout_secs=3")
+
+    sql = "select * from numbers(1000000000)"
+    rows = conn.query_iter(sql)
+    for i in range(N):
+        assert next(rows) is not None
+    time.sleep(10)
+    for i in range(N * 10):
+        assert next(rows) is not None
+
+
+@then("Drop result set should close it")
+def _(context):
+    if DRIVER_VERSION <= (0, 30, 3):
+        print("SKIP")
+        return
+    db_name = "drop_result_set_conn"
+    dsn = "lake://root:@localhost:8000/?sslmode=disable"
+
+    client = tidbcloudlake_driver.BlockingLakeClient(dsn)
+    n = (1 << 50) + 1
+    conn = client.get_conn()
+    conn.exec(f"create or replace database {db_name}")
+    conn.exec(f"use {db_name}")
+    sql = f"select * from numbers({n})"
+    rows = conn.query_iter(sql)
+    assert next(rows) is not None
+    time.sleep(1)
+    sql = f"select count(1) from system.processes where database ='{db_name}'"
+    assert context.conn.query_row(sql)[0] == 1
+
+    # cursor.close()
+    del rows
+    gc.collect()
+    time.sleep(1)
+
+    assert context.conn.query_row(sql)[0] == 0

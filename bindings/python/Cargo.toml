@@ -1,0 +1,33 @@
+[package]
+name = "tidbcloudlake-python"
+publish = false
+
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+name = "_lake_driver"
+doc = false
+
+[dependencies]
+chrono = { workspace = true }
+lake-client = { workspace = true }
+lake-driver = { workspace = true, features = ["rustls", "flight-sql"] }
+lake-driver-core = { workspace = true }
+tokio-stream = { workspace = true }
+
+ctor = "0.2"
+env_logger = "0.11.8"
+http = "1.0"
+once_cell = "1.21"
+pyo3 = { version = "0.24.2", features = ["extension-module", "chrono", "jiff-02"] }
+pyo3-async-runtimes = { version = "0.24", features = ["tokio-runtime"] }
+tokio = "1.44"
+
+[features]
+default = ["py39-abi"]
+py39-abi = ["pyo3/abi3-py39"]
+cp38 = []

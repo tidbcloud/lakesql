@@ -1,0 +1,43 @@
+name: 'Check'
+description: 'Check will do all essential checks'
+runs:
+  using: "composite"
+  steps:
+
+    - name: Check Apache License Header
+      uses: korandoru/hawkeye@v3
+
+    - name: Typos
+      uses: crate-ci/typos@master
+
+    - name: Format
+      shell: bash
+      run: |
+        cargo fmt --all -- --check
+
+    - name: Install Check Tools
+      env:
+        GH_TOKEN: ${{ github.token }}
+      shell: bash
+      run: |
+        cargo install cargo-quickinstall
+        cargo quickinstall cargo-binstall
+        cargo binstall -y cargo-machete
+        cargo binstall -y cargo-deny
+        cargo binstall -y cargo-xwin
+        cargo binstall -y sccache
+
+    - name: Machete
+      shell: bash
+      run: |
+        cargo machete
+
+    - name: Deny Check
+      shell: bash
+      run: |
+        cargo deny check
+
+    - name: Clippy
+      shell: bash
+      run: |
+        cargo clippy --all --all-targets -- -D warnings

@@ -1,0 +1,18 @@
+[package]
+name = "lake-driver-macros"
+description = "Macros for TiDB Cloud Lake Driver"
+categories = ["database"]
+keywords = ["lake", "tidbcloud", "database", "macros"]
+
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0"
+syn = "2.0"

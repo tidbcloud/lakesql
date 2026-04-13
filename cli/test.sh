@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Copyright 2021 TiDB Cloud
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-./target}
+LAKE_USER=${LAKE_USER:-root}
+LAKE_PASSWORD=${LAKE_PASSWORD:-}
+LAKE_HOST=${LAKE_HOST:-localhost}
+LAKE_PORT=${LAKE_PORT:-8000}
+QUERY_RESULT_FORMAT=${QUERY_RESULT_FORMAT:-json}
+
+TEST_HANDLER=$1
+FILTER=$2
+
+cargo build --bin lakesql
+
+case $TEST_HANDLER in
+"flight")
+	echo "==> Testing Flight SQL handler"
+	export LAKESQL_DSN="lake+flight://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:8900/?sslmode=disable"
+	;;
+"http")
+	echo "==> Testing REST API handler"
+	export LAKESQL_DSN="lake://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:${LAKE_PORT}/?sslmode=disable&presign=on&query_result_format=${QUERY_RESULT_FORMAT}"
+	;;
+*)
+	echo "Usage: $0 [flight|http]"
+	exit 1
+	;;
+esac
+
+echo $LAKESQL_DSN
+
+export LAKESQL="${CARGO_TARGET_DIR}/debug/lakesql"
+
+for tf in cli/tests/*.{sql,sh}; do
+	if [[ -n "$FILTER" && ! $tf =~ $FILTER ]]; then
+		continue
+	fi
+
+	[[ -e "$tf" ]] || continue
+	echo "    Running test -- ${tf}"
+	if [[ $tf == *.sh ]]; then
+		suite=$(basename "${tf}" | sed -e 's#.sh##')
+		bash "${tf}" >"cli/tests/${suite}.output" 2>&1 || true
+	elif [[ $tf == *.sql ]]; then
+		suite=$(basename "${tf}" | sed -e 's#.sql##')
+		"${LAKESQL}" --output tsv <"${tf}" >"cli/tests/${suite}.output" 2>&1 || true
+	fi
+	diff "cli/tests/${suite}.output" "cli/tests/${suite}.result"
+done
+rm -f cli/tests/*.output
+
+for tf in cli/tests/"$TEST_HANDLER"/*.{sql,sh}; do
+	[[ -e "$tf" ]] || continue
+
+	if [[ -n "$FILTER" && ! $tf =~ $FILTER ]]; then
+		continue
+	fi
+
+	echo "    Running test -- ${tf}"
+	if [[ $tf == *.sh ]]; then
+		suite=$(basename "${tf}" | sed -e 's#.sh##')
+		bash "${tf}" >"cli/tests/${TEST_HANDLER}/${suite}.output" 2>&1 || true
+	elif [[ $tf == *.sql ]]; then
+		suite=$(basename "${tf}" | sed -e 's#.sql##')
+		"${LAKESQL}" --output tsv <"${tf}" >"cli/tests/${TEST_HANDLER}/${suite}.output" 2>&1 || true
+	fi
+	diff "cli/tests/${TEST_HANDLER}/${suite}.output" "cli/tests/${TEST_HANDLER}/${suite}.result"
+done
+rm -f cli/tests/"$TEST_HANDLER"/*.output
+
+echo "--> Tests $1 passed"
+echo

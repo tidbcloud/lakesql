@@ -1,0 +1,19 @@
+{
+  "name": "@tidbcloudlake-driver/lib-win32-x64-msvc",
+  "repository": "https://github.com/tidbcloud/lakesql.git",
+  "version": "0.33.7",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "tidbcloudlake-driver.win32-x64-msvc.node",
+  "files": [
+    "tidbcloudlake-driver.win32-x64-msvc.node"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">= 10"
+  }
+}

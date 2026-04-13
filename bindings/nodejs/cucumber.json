@@ -1,0 +1,6 @@
+{
+  "default": {
+    "paths": ["tests/*.feature"],
+    "require": ["tests/*.js"]
+  }
+}

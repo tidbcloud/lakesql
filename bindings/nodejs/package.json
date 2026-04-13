@@ -1,0 +1,77 @@
+{
+  "name": "tidbcloudlake-driver",
+  "author": "TiDB Cloud Authors <support@tidbcloud.com>",
+  "version": "0.33.7",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "description": "TiDB Cloud Lake Driver Node.js Binding",
+  "repository": {
+    "url": "git+https://github.com/tidbcloud/lakesql.git"
+  },
+  "napi": {
+    "name": "tidbcloudlake-driver",
+    "package": {
+      "name": "@tidbcloudlake-driver/lib"
+    },
+    "triples": {
+      "defaults": false,
+      "additional": [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-musl",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin"
+      ]
+    }
+  },
+  "keywords": [
+    "api",
+    "tidbcloud",
+    "lake",
+    "driver"
+  ],
+  "files": [
+    "index.d.ts",
+    "index.js",
+    "generated.js",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.1.0",
+    "@napi-rs/cli": "^2.18.4",
+    "@types/node": "^22.10.1",
+    "prettier": "^3.4.2",
+    "typedoc": "^0.27.4",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "scripts": {
+    "build": "napi build --platform --target=$NAPI_TARGET --release --js generated.js && node ./scripts/header.js",
+    "build:debug": "napi build --platform --target=$NAPI_TARGET --js generated.js && node ./scripts/header.js",
+    "docs": "typedoc",
+    "format": "prettier --write .",
+    "test": "cucumber-js",
+    "prepublishOnly": "napi prepublish -t npm --skip-gh-release"
+  },
+  "prettier": {
+    "overrides": [
+      {
+        "files": "./**/*.{js,ts,mjs}",
+        "options": {
+          "printWidth": 120
+        }
+      }
+    ]
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.15.0+sha512.76e2379760a4328ec4415815bcd6628dee727af3779aaa4c914e3944156c4299921a89f976381ee107d41f12cfa4b66681ca9c718f0668fa0831ed4c6d8ba56c"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@tidbcloudlake-driver/lib-darwin-x64",
+  "repository": "https://github.com/tidbcloud/lakesql.git",
+  "version": "0.33.7",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "tidbcloudlake-driver.darwin-x64.node",
+  "files": [
+    "tidbcloudlake-driver.darwin-x64.node"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">= 10"
+  }
+}

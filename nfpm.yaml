@@ -1,0 +1,15 @@
+name: "lakesql"
+arch: ""
+platform: "linux"
+version: ""
+section: "database"
+priority: "extra"
+maintainer: "TiDB Cloud Authors <engineering@tidbcloud.com>"
+description: |
+  LakeSQL is a native command line tool for TiDB Cloud Lake.
+vendor: "Datafuse Labs"
+homepage: "https://github.com/tidbcloud/lakesql"
+license: "Apache-2.0"
+contents:
+- src: dist/lakesql
+  dst: /usr/bin/lakesql

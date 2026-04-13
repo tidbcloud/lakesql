@@ -1,0 +1,338 @@
+// Copyright 2025 TiDB Cloud
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Loading from `$HOME/.config/lakesql/config.toml`
+
+use anyhow::anyhow;
+use anyhow::Result;
+use clap::ValueEnum;
+use lake_driver::LoadMethod;
+use serde::Deserialize;
+use std::{collections::BTreeMap, path::Path};
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Config {
+    #[serde(default)]
+    pub connection: ConnectionConfig,
+    #[serde(default)]
+    pub settings: SettingsConfig,
+    #[serde(default)]
+    pub server: ServerConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct SettingsConfig {
+    pub display_pretty_sql: Option<bool>,
+    pub prompt: Option<String>,
+    pub progress_color: Option<String>,
+    pub no_auto_complete: Option<bool>,
+    pub show_progress: Option<bool>,
+    pub show_stats: Option<bool>,
+    pub show_query_id: Option<bool>,
+    pub expand: Option<String>,
+    pub quote_string: Option<bool>,
+    pub sql_delimiter: Option<char>,
+    pub max_display_rows: Option<usize>,
+    pub max_col_width: Option<usize>,
+    pub max_width: Option<usize>,
+}
+
+#[derive(Clone, Debug, Copy)]
+pub enum ExpandMode {
+    On,
+    Off,
+    Auto,
+}
+
+impl From<&str> for ExpandMode {
+    fn from(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_str() {
+            "on" => ExpandMode::On,
+            "off" => ExpandMode::Off,
+            "auto" => ExpandMode::Auto,
+            _ => ExpandMode::Auto,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Settings {
+    pub display_pretty_sql: bool,
+    pub prompt: String,
+    pub progress_color: String,
+    pub no_auto_complete: bool,
+
+    /// Show progress [bar] when executing queries.
+    /// Only works with output format `table` and `null`.
+    pub show_progress: bool,
+
+    /// Show stats after executing queries.
+    /// Only works with non-interactive mode.
+    pub show_stats: bool,
+    /// Show the last query ID after each execution.
+    pub show_query_id: bool,
+    /// Output max rows (only works in table output format)
+    pub max_display_rows: usize,
+    /// limit display render each column max width, smaller than 3 means disable the limit
+    pub max_col_width: usize,
+    /// limit display render box max width, 0 means default to the size of the terminal
+    pub max_width: usize,
+    /// Output format is set by the flag.
+    pub output_format: OutputFormat,
+    // Output Quote Style.
+    pub quote_style: OutputQuoteStyle,
+    /// Expand table format display, default off, could be on/off/auto.
+    /// only works with output format `table`.
+    pub expand: ExpandMode,
+
+    /// Show time elapsed when executing queries.
+    /// only works with output format `null`.
+    pub time: Option<TimeOption>,
+
+    /// Multi line mode, default is true.
+    pub multi_line: bool,
+    /// Whether to quote string values in table output format.
+    pub quote_string: bool,
+    pub sql_delimiter: char,
+
+    pub bind_address: String,
+    pub bind_port: u16,
+    pub auto_open_browser: bool,
+    /// Enable web UI interface (security risk)
+    pub enable_ui: bool,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Deserialize)]
+pub enum OutputFormat {
+    Table,
+    CSV,
+    TSV,
+    Null,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Deserialize)]
+pub enum OutputQuoteStyle {
+    Always,
+    Necessary,
+    NonNumeric,
+    Never,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum TimeOption {
+    Local,
+    Server,
+}
+
+impl TryFrom<&str> for TimeOption {
+    type Error = anyhow::Error;
+    fn try_from(s: &str) -> anyhow::Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "server" => Ok(TimeOption::Server),
+            "local" => Ok(TimeOption::Local),
+            _ => Err(anyhow!("Unknown time display option: {}", s)),
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum ClapLoadMethod {
+    Stage,
+    Streaming,
+}
+
+impl From<ClapLoadMethod> for LoadMethod {
+    fn from(value: ClapLoadMethod) -> Self {
+        match value {
+            ClapLoadMethod::Stage => LoadMethod::Stage,
+            ClapLoadMethod::Streaming => LoadMethod::Streaming,
+        }
+    }
+}
+
+impl Settings {
+    pub fn merge_config(&mut self, c: &Config) {
+        let cfg = c.settings.clone();
+
+        self.display_pretty_sql = cfg.display_pretty_sql.unwrap_or(self.display_pretty_sql);
+        self.prompt = cfg.prompt.unwrap_or_else(|| self.prompt.clone());
+        self.progress_color = cfg
+            .progress_color
+            .unwrap_or_else(|| self.progress_color.clone());
+        self.no_auto_complete = cfg.no_auto_complete.unwrap_or(self.no_auto_complete);
+        self.show_progress = cfg.show_progress.unwrap_or(self.show_progress);
+        self.show_stats = cfg.show_stats.unwrap_or(self.show_stats);
+        self.show_query_id = cfg.show_query_id.unwrap_or(self.show_query_id);
+        self.expand = cfg
+            .expand
+            .map(|expand| expand.as_str().into())
+            .unwrap_or_else(|| self.expand);
+        self.quote_string = cfg.quote_string.unwrap_or(self.quote_string);
+        self.sql_delimiter = cfg.sql_delimiter.unwrap_or(self.sql_delimiter);
+        self.max_width = cfg.max_width.unwrap_or(self.max_width);
+        self.max_col_width = cfg.max_col_width.unwrap_or(self.max_col_width);
+        self.max_display_rows = cfg.max_display_rows.unwrap_or(self.max_display_rows);
+        self.auto_open_browser = c.server.auto_open_browser;
+        self.bind_address.clone_from(&c.server.bind_address);
+        if self.bind_port == 0 {
+            self.bind_port = c.server.bind_port;
+        }
+    }
+
+    pub fn inject_ctrl_cmd(&mut self, cmd_name: &str, cmd_value: &str) -> Result<()> {
+        match cmd_name {
+            "display_pretty_sql" => self.display_pretty_sql = cmd_value.parse()?,
+            "prompt" => self.prompt = cmd_value.to_string(),
+            "progress_color" => self.progress_color = cmd_value.to_string(),
+            "show_progress" => self.show_progress = cmd_value.parse()?,
+            "show_stats" => self.show_stats = cmd_value.parse()?,
+            "show_query_id" => self.show_query_id = cmd_value.parse()?,
+            "output_format" => {
+                self.output_format = match cmd_value.to_ascii_lowercase().as_str() {
+                    "table" => OutputFormat::Table,
+                    "csv" => OutputFormat::CSV,
+                    "tsv" => OutputFormat::TSV,
+                    "null" => OutputFormat::Null,
+                    _ => return Err(anyhow!("Unknown output format: {}", cmd_value)),
+                }
+            }
+            "quote_style" => {
+                self.quote_style = match cmd_value.to_ascii_lowercase().as_str() {
+                    "necessary" => OutputQuoteStyle::Necessary,
+                    "always" => OutputQuoteStyle::Always,
+                    "never" => OutputQuoteStyle::Never,
+                    "nonnumeric" => OutputQuoteStyle::NonNumeric,
+                    _ => return Err(anyhow!("Unknown quote style: {}", cmd_value)),
+                }
+            }
+            "expand" => self.expand = cmd_value.into(),
+            "time" => self.time = Some(cmd_value.try_into()?),
+            "multi_line" => self.multi_line = cmd_value.parse()?,
+            "max_display_rows" => self.max_display_rows = cmd_value.parse()?,
+            "max_width" => self.max_width = cmd_value.parse()?,
+            "max_col_width" => self.max_col_width = cmd_value.parse()?,
+            "quote_string" => self.quote_string = cmd_value.parse()?,
+            "sql_delimiter" => {
+                if cmd_value.len() != 1 {
+                    return Err(anyhow!("SQL delimiter must be a single character"));
+                }
+                self.sql_delimiter = cmd_value.chars().next().unwrap()
+            }
+            _ => return Err(anyhow!("Unknown command: {}", cmd_name)),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct ConnectionConfig {
+    pub host: String,
+    pub port: Option<u16>,
+    pub user: String,
+    pub database: Option<String>,
+    pub tls: Option<bool>,
+    pub args: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct ServerConfig {
+    pub bind_address: String,
+    pub bind_port: u16,
+    pub auto_open_browser: bool,
+}
+
+impl Config {
+    pub fn load() -> Self {
+        let paths = [
+            format!(
+                "{}/.lakesql/config.toml",
+                std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+            ),
+            format!(
+                "{}/.config/lakesql/config.toml",
+                std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+            ),
+        ];
+        let path = paths.iter().find(|p| Path::new(p).exists());
+        match path {
+            Some(path) => Self::load_from_file(path),
+            None => Self::default(),
+        }
+    }
+
+    fn load_from_file(path: &str) -> Self {
+        match toml::from_str(&std::fs::read_to_string(path).unwrap()) {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("failed to load config file {path}: {e}, using defaults");
+                Self::default()
+            }
+        }
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            display_pretty_sql: true,
+            progress_color: "cyan".to_string(),
+            prompt: "{user}@{warehouse}/{catalog}/{database}> ".to_string(),
+            no_auto_complete: false,
+            output_format: OutputFormat::Table,
+            quote_style: OutputQuoteStyle::Necessary,
+            sql_delimiter: ';',
+            expand: ExpandMode::Auto,
+            show_progress: false,
+            max_display_rows: 200,
+            max_col_width: 20,
+            // Default width is terminal size
+            max_width: 0,
+            show_stats: false,
+            show_query_id: false,
+            time: None,
+            multi_line: true,
+            quote_string: false,
+            auto_open_browser: false,
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 0,
+            enable_ui: false,
+        }
+    }
+}
+
+impl Default for ConnectionConfig {
+    fn default() -> Self {
+        Self {
+            host: "localhost".to_string(),
+            port: Some(8000),
+            user: "root".to_string(),
+            database: None,
+            tls: None,
+            args: BTreeMap::new(),
+        }
+    }
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: "127.0.0.1".to_string(),
+            bind_port: 0,
+            auto_open_browser: true,
+        }
+    }
+}

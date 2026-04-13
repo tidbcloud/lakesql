@@ -1,0 +1,16 @@
+{
+  "entryPoints": ["index.d.ts"],
+  "out": "docs",
+  "name": "TiDB Cloud Lake Driver",
+  "tsconfig": "tsconfig.json",
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeExternals": true,
+  "includeVersion": true,
+  "githubPages": false,
+  "navigationLinks": {
+    "Homepage": "https://docs.tidbcloud.com/tidbcloud/tidbcloud-lake",
+    "GitHub": "https://github.com/tidbcloud/lakesql"
+  }
+}
+

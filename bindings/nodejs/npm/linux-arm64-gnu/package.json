@@ -1,0 +1,22 @@
+{
+  "name": "@tidbcloudlake-driver/lib-linux-arm64-gnu",
+  "repository": "https://github.com/tidbcloud/lakesql.git",
+  "version": "0.33.7",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "tidbcloudlake-driver.linux-arm64-gnu.node",
+  "files": [
+    "tidbcloudlake-driver.linux-arm64-gnu.node"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">= 10"
+  },
+  "libc": [
+    "glibc"
+  ]
+}
