@@ -320,9 +320,10 @@ def test_load_file(context, load_method):
         )
         """
     )
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "test.csv")
     progress = context.conn.load_file(
         "INSERT INTO test1 VALUES FROM @_databend_load file_format = (type=csv)",
-        "tests/data/test.csv",
+        csv_path,
     )
     assert progress.write_rows == 3, (
         f"{load_method} progress.write_rows: {progress.write_rows}"
@@ -493,7 +494,10 @@ def _(context):
         print("SKIP")
         return
 
-    dsn = "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3"
+    dsn = os.getenv(
+        "TEST_LAKE_DSN",
+        "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3",
+    )
     client = tidbcloudlake_driver.BlockingLakeClient(dsn)
 
     N = 10000
@@ -515,8 +519,10 @@ def _(context):
         print("SKIP")
         return
     db_name = "drop_result_set_conn"
-    dsn = "lake://root:@localhost:8000/?sslmode=disable"
-
+    dsn = os.getenv(
+        "TEST_LAKE_DSN",
+        "lake://root:@localhost:8000/?sslmode=disable",
+    )
     client = tidbcloudlake_driver.BlockingLakeClient(dsn)
     n = (1 << 50) + 1
     conn = client.get_conn()

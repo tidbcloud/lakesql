@@ -204,6 +204,20 @@ async def _(context):
 
 @then("Stream load and Select should be equal")
 async def _(context):
+    await context.conn.exec("DROP TABLE IF EXISTS test")
+    await context.conn.exec(
+        """
+        CREATE TABLE test (
+            i64 Int64,
+            u64 UInt64,
+            f64 Float64,
+            s   String,
+            s2  String,
+            d   Date,
+            t   DateTime
+        )
+        """
+    )
     values = [
         ["-1", "1", "1.0", "'", "\\N", "2011-03-06", "2011-03-06T06:20:00Z"],
         ["-2", "2", "2.0", '"', "", "2012-05-31", "2012-05-31T11:20:00Z"],
@@ -264,9 +278,10 @@ async def test_load_file(context, load_method):
         )
         """
     )
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "test.csv")
     progress = await context.conn.load_file(
         "INSERT INTO test1 VALUES from @_databend_load file_format = (type=csv)",
-        "tests/data/test.csv",
+        csv_path,
         load_method,
     )
     assert progress.write_rows == 3, (
@@ -440,7 +455,10 @@ async def _(context):
         print("SKIP")
         return
 
-    dsn = "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3"
+    dsn = os.getenv(
+        "TEST_LAKE_DSN",
+        "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3",
+    )
     client = tidbcloudlake_driver.AsyncLakeClient(dsn)
 
     N = 10000

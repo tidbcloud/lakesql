@@ -251,22 +251,36 @@ def _(context):
     if DRIVER_VERSION <= (0, 30, 3):
         print("SKIP")
         return
-    else:
-        # For new versions, use actual dict objects
-        values = [
-            [-1, 1, 1.0, "'", None, "2011-03-06", "2011-03-06T06:20:00Z", {"a": 1}],
-            (-2, "2", 2.0, '"', "", "2012-05-31", "2012-05-31T11:20:00Z", {"a": 2}),
-            [
-                "-3",
-                3,
-                3.0,
-                "\\",
-                "NULL",
-                "2016-04-04",
-                "2016-04-04T11:30:00Z",
-                {"a": 3},
-            ],
-        ]
+    context.cursor.execute("DROP TABLE IF EXISTS test")
+    context.cursor.execute(
+        """
+        CREATE TABLE test (
+            i64 Int64,
+            u64 UInt64,
+            f64 Float64,
+            s   String,
+            s2  String,
+            d   Date,
+            t   DateTime,
+            v   Variant
+        )
+        """
+    )
+    # For new versions, use actual dict objects
+    values = [
+        [-1, 1, 1.0, "'", None, "2011-03-06", "2011-03-06T06:20:00Z", {"a": 1}],
+        (-2, "2", 2.0, '"', "", "2012-05-31", "2012-05-31T11:20:00Z", {"a": 2}),
+        [
+            "-3",
+            3,
+            3.0,
+            "\\",
+            "NULL",
+            "2016-04-04",
+            "2016-04-04T11:30:00Z",
+            {"a": 3},
+        ],
+    ]
     count = context.cursor.executemany("INSERT INTO test VALUES", values)
     assert count == 3, f"count: {count}"
 
@@ -381,7 +395,10 @@ def _(context):
         print("SKIP")
         return
 
-    dsn = "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3"
+    dsn = os.getenv(
+        "TEST_LAKE_DSN",
+        "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3",
+    )
     client = tidbcloudlake_driver.BlockingLakeClient(dsn)
 
     N = 10000

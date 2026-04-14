@@ -69,8 +69,24 @@ async fn change_password() {
         .unwrap();
     assert_eq!(n, 0);
 
-    let dsn = "lake://u1:p1@localhost:8000/default?sslmode=disable&session_token=enable";
-    let client = Client::new(dsn.to_string());
+    // Extract host from the original DSN to avoid hardcoding localhost:8000
+    let parsed = url::Url::parse(dsn).unwrap();
+    let host = parsed.host_str().unwrap();
+    let port = parsed.port().unwrap_or(443);
+    let db = parsed.path().trim_start_matches('/');
+    let db = if db.is_empty() { "default" } else { db };
+    // Preserve extra query params (warehouse, sslmode, etc.) from original DSN
+    let mut extra_params = String::new();
+    for (k, v) in parsed.query_pairs() {
+        if k != "session_token" {
+            extra_params.push_str(&format!("&{}={}", k, v));
+        }
+    }
+    let user_dsn = format!(
+        "lake://u1:p1@{}:{}/{}?session_token=enable{}",
+        host, port, db, extra_params,
+    );
+    let client = Client::new(user_dsn);
     let conn = client.get_conn().await.unwrap();
 
     let n = conn

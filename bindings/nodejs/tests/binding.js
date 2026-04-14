@@ -81,7 +81,7 @@ Then("Select params binding", async function () {
   }
 });
 
-Then("Select types should be expected native types", async function () {
+Then("Select types should be expected native types", { timeout: 60000 }, async function () {
   // BOOLEAN
   {
     const row = await this.conn.queryRow("SELECT true, false");
@@ -455,8 +455,13 @@ Then("Query should not timeout", { timeout: 30000 }, async function () {
   }
   const page_size = 10000;
 
-  const dsn = `lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3&max_rows_per_page=${page_size.toString()}`;
-  const client = new Client(dsn);
+  const parsedUrl = new URL(dsn);
+  parsedUrl.searchParams.set("wait_time_secs", "3");
+  parsedUrl.searchParams.set("max_rows_per_page", page_size.toString());
+  // Clear database path for heartbeat connection
+  parsedUrl.pathname = "/";
+  const heartbeatDsn = parsedUrl.toString();
+  const client = new Client(heartbeatDsn);
 
   const conn = await client.getConn();
   await conn.exec("set http_handler_result_timeout_secs=3");
@@ -482,7 +487,7 @@ Then("Query should not timeout", { timeout: 30000 }, async function () {
   //await conn.close();
 });
 
-Then("Drop result set should close it", async function () {
+Then("Drop result set should close it", { timeout: 60000 }, async function () {
   if (DRIVER_VERSION < [0, 30, 3]) {
     console.log("SKIP");
     return;
