@@ -24,5 +24,6 @@ frontend/.next/
 # cli/frontend/build/ will be committed to ensure cargo install has full UI
 
 /target/
-/cli/frontend/build/
+/cli/frontend/build/*
+!/cli/frontend/build/.gitkeep
 /cli/frontend/.next/
