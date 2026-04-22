@@ -6,7 +6,7 @@ default: run
 run: test-core test-driver test-lakesql down
 
 prepare:
-	mkdir -p data/lake
+	mkdir -p data/databend
 
 up: prepare
 	docker compose up --scale query=3 --quiet-pull -d  --wait
