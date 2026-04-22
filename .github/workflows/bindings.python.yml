@@ -138,6 +138,9 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Prepare
         working-directory: tests
+        env:
+          DATABEND_QUERY_VERSION: v1.2.881-nightly
+          DATABEND_META_VERSION: v1.2.881-nightly
         run: make up
       - name: Download artifact
         uses: actions/download-artifact@v4
