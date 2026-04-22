@@ -1,3 +1,6 @@
+const path = require('path')
+const webpack = require('webpack')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -9,6 +12,19 @@ const nextConfig = {
   },
   // Generate fixed filenames to reduce git changes
   webpack: (config, { isServer }) => {
+    // `@antv/l7-component` (transitively pulled in by `@ant-design/charts`)
+    // ships raw `.less` files that Next.js does not compile. The imports
+    // come from the map stack, which our flow-graph usage doesn't render,
+    // so redirect every `.less` import to an empty stub. Done via a
+    // plugin instead of a `module.rules` entry so Next.js's built-in CSS
+    // handling stays enabled.
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /\.less$/,
+        path.resolve(__dirname, 'empty-less.js')
+      )
+    )
+
     if (!isServer) {
       // Use fixed filenames instead of content hashes
       config.output.filename = 'static/js/[name].js'
