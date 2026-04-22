@@ -48,22 +48,7 @@ def new_driver_with_old_servers(session, db_version, query_result_format):
         session.run("make", "down")
 
 
-def generate_params2():
-    # No prior tidbcloudlake-driver releases on PyPI yet; re-enable with
-    # real versions once the first tidbcloudlake-driver wheel is published.
-    return
-    yield
-
-
-@nox.session
-@nox.parametrize(["driver_version", "query_result_format"], generate_params2())
-def new_test_with_old_drivers(session, driver_version, query_result_format):
-    session.install("behave")
-    session.install(f"tidbcloudlake-driver=={driver_version}")
-    with session.chdir(".."):
-        env = {
-            "DRIVER_VERSION": driver_version,
-            "QUERY_RESULT_FORMAT": query_result_format,
-        }
-        session.run("make", "test-bindings-python", env=env)
-        session.run("make", "down")
+# `new_test_with_old_drivers` is disabled: no prior `tidbcloudlake-driver`
+# releases exist on PyPI yet (package was renamed from `databend-driver`).
+# Re-add a parametrized session once the first tidbcloudlake-driver wheel
+# is published.
