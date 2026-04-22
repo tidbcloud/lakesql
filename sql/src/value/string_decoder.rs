@@ -20,10 +20,10 @@ use crate::cursor_ext::{
 };
 use crate::error::{ConvertError, Result};
 use chrono::{Datelike, NaiveDate};
-use lake_client::schema::{DataType, DecimalDataType, DecimalSize, NumberDataType};
 use ethnum::i256;
 use hex;
 use jiff::{civil::DateTime as JiffDateTime, tz::TimeZone, Zoned};
+use lake_client::schema::{DataType, DecimalDataType, DecimalSize, NumberDataType};
 use serde::Deserialize;
 use serde_json::{value::RawValue, Deserializer};
 use std::io::{BufRead, Cursor};

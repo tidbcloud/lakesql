@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use lake_driver_core::error::Error as CoreError;
 use http::StatusCode;
+use lake_driver_core::error::Error as CoreError;
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 
 // PEP-249 compliant exception hierarchy

@@ -338,9 +338,7 @@ impl BlockingLakeCursor {
         values: Option<Bound<'p, PyAny>>,
     ) -> PyResult<PyObject> {
         if self.closed {
-            return Err(PyException::new_err(
-                "BlockingLakeCursor already closed",
-            ));
+            return Err(PyException::new_err("BlockingLakeCursor already closed"));
         }
         if let Some(values) = values {
             return self.executemany(py, operation, [values].to_vec());

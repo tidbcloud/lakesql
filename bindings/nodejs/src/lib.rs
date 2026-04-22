@@ -307,9 +307,7 @@ impl ToNapiValue for Value<'_> {
                 Object::to_napi_value(env, obj)
             }
             lake_driver::Value::Boolean(b) => bool::to_napi_value(env, *b),
-            lake_driver::Value::Binary(b) => {
-                Buffer::to_napi_value(env, Buffer::from(b.as_slice()))
-            }
+            lake_driver::Value::Binary(b) => Buffer::to_napi_value(env, Buffer::from(b.as_slice())),
             lake_driver::Value::String(s) => String::to_napi_value(env, s.to_string()),
             lake_driver::Value::Number(n) => {
                 NumberValue::to_napi_value(env, NumberValue(n.clone()))
@@ -380,9 +378,7 @@ impl ToNapiValue for Value<'_> {
                     arr.set(
                         i as u32,
                         Value::new(
-                            &lake_driver::Value::Number(lake_driver::NumberValue::Float32(
-                                *v,
-                            )),
+                            &lake_driver::Value::Number(lake_driver::NumberValue::Float32(*v)),
                             val.opts,
                         ),
                     )?;

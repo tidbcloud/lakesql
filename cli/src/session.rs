@@ -114,9 +114,7 @@ impl Session {
                                 return Err(err.into());
                             }
                         }
-                        lake_driver::Error::Api(lake_client::Error::Request(
-                            ref resp_err,
-                        )) => {
+                        lake_driver::Error::Api(lake_client::Error::Request(ref resp_err)) => {
                             if resp_err.contains("error sending request for url") {
                                 return Err(err.into());
                             }

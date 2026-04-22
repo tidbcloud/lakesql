@@ -37,9 +37,7 @@ use lake_client::schema::Schema;
 use lake_client::SensitiveString;
 use lake_client::{presign_upload_to_stage, ResultFormatSettings};
 use lake_driver_core::error::{Error, Result};
-use lake_driver_core::rows::{
-    Row, RowIterator, RowStatsIterator, RowWithStats, Rows, ServerStats,
-};
+use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, Rows, ServerStats};
 
 #[derive(Clone)]
 pub struct FlightSQLConnection {

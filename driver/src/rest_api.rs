@@ -33,9 +33,7 @@ use lake_client::Pages;
 use lake_client::{APIClient, ResultFormatSettings};
 use lake_driver_core::error::{Error, Result};
 use lake_driver_core::raw_rows::{RawRow, RawRowIterator, RawRowWithStats};
-use lake_driver_core::rows::{
-    Row, RowIterator, RowStatsIterator, RowWithStats, Rows, ServerStats,
-};
+use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, Rows, ServerStats};
 
 const LOAD_PLACEHOLDER: &str = "@_databend_load";
 

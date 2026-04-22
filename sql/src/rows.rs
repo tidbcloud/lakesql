@@ -22,9 +22,9 @@ use tokio_stream::{Stream, StreamExt};
 use crate::error::{Error, Result};
 use crate::value::Value;
 use arrow::record_batch::RecordBatch;
+use jiff::tz::TimeZone;
 use lake_client::schema::SchemaRef;
 use lake_client::ResultFormatSettings;
-use jiff::tz::TimeZone;
 
 #[derive(Clone, Debug)]
 pub enum RowWithStats {

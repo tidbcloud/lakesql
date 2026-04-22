@@ -14,11 +14,11 @@
 
 use crate::error::Error;
 use crate::error::Result;
-use lake_client::GeometryDataType;
 use geo::Geometry;
 use geozero::geo_types::GeoWriter;
 use geozero::wkb::Ewkb;
 use geozero::{GeomProcessor, GeozeroGeometry, ToJson, ToWkb, ToWkt};
+use lake_client::GeometryDataType;
 
 pub fn convert_geometry(raw_data: &[u8], typ: GeometryDataType) -> Result<String> {
     let (geo, srid) =

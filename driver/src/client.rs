@@ -82,7 +82,8 @@ impl Client {
     pub async fn get_conn(&self) -> Result<Connection> {
         let u = Url::parse(&self.dsn)?;
         match u.scheme() {
-            "databend" | "databend+http" | "databend+https" | "lake" | "lake+http" | "lake+https" => {
+            "databend" | "databend+http" | "databend+https" | "lake" | "lake+http"
+            | "lake+https" => {
                 let conn = RestAPIConnection::try_create(&self.dsn, self.name.clone()).await?;
                 Ok(Connection {
                     inner: Box::new(conn),

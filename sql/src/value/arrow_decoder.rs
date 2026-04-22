@@ -25,6 +25,9 @@ use arrow_array::{
     UInt8Array,
 };
 use arrow_schema::{DataType as ArrowDataType, Field as ArrowField, TimeUnit};
+use ethnum::i256;
+use jiff::{tz, Timestamp};
+use jsonb::RawJsonb;
 use lake_client::schema::{
     DecimalSize, ARROW_EXT_TYPE_BITMAP, ARROW_EXT_TYPE_EMPTY_ARRAY, ARROW_EXT_TYPE_EMPTY_MAP,
     ARROW_EXT_TYPE_GEOGRAPHY, ARROW_EXT_TYPE_GEOMETRY, ARROW_EXT_TYPE_INTERVAL,
@@ -32,9 +35,6 @@ use lake_client::schema::{
     EXTENSION_KEY,
 };
 use lake_client::ResultFormatSettings;
-use ethnum::i256;
-use jiff::{tz, Timestamp};
-use jsonb::RawJsonb;
 
 /// The in-memory representation of the MonthDayMicros variant of the "Interval" logical type.
 #[allow(non_camel_case_types)]

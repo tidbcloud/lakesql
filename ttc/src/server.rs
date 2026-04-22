@@ -50,10 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // check dsn
     {
-        println!(
-            "Start to check lake dsn: {} is valid",
-            config.lake_dsn
-        );
+        println!("Start to check lake dsn: {} is valid", config.lake_dsn);
         let client = Client::new(config.lake_dsn.clone());
         let conn = client.get_conn().await.unwrap();
         println!("Lake version: {}", conn.version().await.unwrap());

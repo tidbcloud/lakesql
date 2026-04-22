@@ -1499,7 +1499,10 @@ mod test {
         let dsn = "lake://username:password@app.lake.tidbcloud.com/test?wait_time_secs=10&max_rows_in_buffer=5000000&max_rows_per_page=10000&warehouse=wh&sslmode=disable";
         let client = APIClient::from_dsn(dsn).await?;
         assert_eq!(client.host, "app.lake.tidbcloud.com");
-        assert_eq!(client.endpoint, Url::parse("http://app.lake.tidbcloud.com:80")?);
+        assert_eq!(
+            client.endpoint,
+            Url::parse("http://app.lake.tidbcloud.com:80")?
+        );
         assert_eq!(client.wait_time_secs, Some(10));
         assert_eq!(client.max_rows_in_buffer, Some(5000000));
         assert_eq!(client.max_rows_per_page, Some(10000));

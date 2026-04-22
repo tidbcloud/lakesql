@@ -31,13 +31,9 @@ pub use params::Param;
 pub use params::Params;
 
 // pub use for convenience
-pub use lake_client::schema::{
-    DataType, DecimalSize, Field, NumberDataType, Schema, SchemaRef,
-};
+pub use lake_client::schema::{DataType, DecimalSize, Field, NumberDataType, Schema, SchemaRef};
 pub use lake_driver_core::error::{Error, Result};
-pub use lake_driver_core::rows::{
-    Row, RowIterator, RowStatsIterator, RowWithStats, ServerStats,
-};
+pub use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, ServerStats};
 pub use lake_driver_core::value::Interval;
 pub use lake_driver_core::value::{
     zoned_to_chrono_datetime, zoned_to_chrono_fixed_offset, NumberValue, Value,
