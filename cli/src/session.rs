@@ -107,17 +107,15 @@ impl Session {
                         }
                         lake_driver::Error::Arrow(arrow::error::ArrowError::IpcError(
                             ref ipc_err,
-                        )) => {
-                            if ipc_err.contains("Unauthenticated")
-                                || ipc_err.contains("Connection refused")
-                            {
-                                return Err(err.into());
-                            }
+                        )) if ipc_err.contains("Unauthenticated")
+                            || ipc_err.contains("Connection refused") =>
+                        {
+                            return Err(err.into());
                         }
-                        lake_driver::Error::Api(lake_client::Error::Request(ref resp_err)) => {
-                            if resp_err.contains("error sending request for url") {
-                                return Err(err.into());
-                            }
+                        lake_driver::Error::Api(lake_client::Error::Request(ref resp_err))
+                            if resp_err.contains("error sending request for url") =>
+                        {
+                            return Err(err.into());
                         }
                         _ => {}
                     }

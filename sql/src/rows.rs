@@ -140,7 +140,7 @@ impl TryFrom<(SchemaRef, Vec<Option<String>>, &TimeZone)> for Row {
 
     fn try_from((schema, data, tz): (SchemaRef, Vec<Option<String>>, &TimeZone)) -> Result<Self> {
         let mut values: Vec<Value> = Vec::with_capacity(data.len());
-        for (field, val) in schema.fields().iter().zip(data.into_iter()) {
+        for (field, val) in schema.fields().iter().zip(data) {
             values.push(Value::try_from((&field.data_type, val, tz))?);
         }
         Ok(Self::new(schema, values))
