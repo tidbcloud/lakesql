@@ -11,9 +11,7 @@ TiDB Cloud Lake Node.js Client
 ```javascript
 const { Client } = require("tidbcloudlake-driver");
 
-const client = new Client(
-  "lake://root:root@localhost:8000/?sslmode=disable",
-);
+const client = new Client("lake://root:root@localhost:8000/?sslmode=disable");
 const conn = await client.getConn();
 
 await conn.exec(`CREATE TABLE test (
