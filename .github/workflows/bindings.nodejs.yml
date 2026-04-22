@@ -2,6 +2,7 @@ name: Bindings Node.js
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   check:

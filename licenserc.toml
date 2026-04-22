@@ -44,5 +44,5 @@ excludes = [
 ]
 
 [properties]
-inceptionYear = 2021
-copyrightOwner = "Datafuse Labs"
+inceptionYear = 2025
+copyrightOwner = "TiDB Cloud"

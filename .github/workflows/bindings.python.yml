@@ -2,6 +2,7 @@ name: Bindings Python
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   check:
