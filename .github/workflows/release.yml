@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   check:
     name: Check version and create release
@@ -65,7 +68,6 @@ jobs:
         target:
           - x86_64-unknown-linux-gnu
           - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
     runs-on: ubuntu-latest
     steps:
@@ -84,18 +86,19 @@ jobs:
         shell: bash
         run: |
           cross build --release --target=${{ matrix.target }} --bin=lakesql
-      - name: Publish Binary
+      - name: Package Binary
+        id: package
         uses: ./.github/actions/publish_binary
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
         with:
           os: linux
           target: ${{ matrix.target }}
           version: ${{ needs.check.outputs.new_version }}
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/${{ steps.package.outputs.file }}
+          if-no-files-found: error
 
   build_other:
     needs: check
@@ -124,197 +127,78 @@ jobs:
         shell: bash
         run: |
           cargo build --release --target=${{ matrix.target }} --bin=lakesql
-      - name: Publish Binary
+      - name: Package Binary
+        id: package
         uses: ./.github/actions/publish_binary
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
         with:
           os: ${{ matrix.os }}
           target: ${{ matrix.target }}
           version: ${{ needs.check.outputs.new_version }}
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/${{ steps.package.outputs.file }}
+          if-no-files-found: error
 
-  update_repo:
+  publish_s3:
     needs: [check, build_linux, build_other]
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update Release and Tags
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
-        run: |
-          gh api '/repos/tidbcloud/lakesql/tags' > tags.json
-          aws s3 cp tags.json s3://repo/lakesql/tags.json --checksum-algorithm=CRC32
-          gh api '/repos/tidbcloud/lakesql/releases' > releases.json
-          aws s3 cp releases.json s3://repo/lakesql/releases.json --checksum-algorithm=CRC32
-
-  crates:
-    needs: [check, build_linux]
-    if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
-    environment:
-      name: crates.io
-      url: https://crates.io/crates/lake-driver
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Rust toolchain
-        uses: ./.github/actions/setup
-        with:
-          cache-key: publish
-      - name: Setup Cargo workspaces
-        run: |
-          cargo install cargo-quickinstall
-          cargo quickinstall cargo-workspaces
-      - name: Release to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          cargo workspaces publish --all --publish-as-is --yes
-
-  distribution:
-    needs: [check, build_linux]
-    if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - packager: apk
-            arch: amd64
-            target: x86_64-unknown-linux-musl
-          - packager: apk
-            arch: arm64
-            target: aarch64-unknown-linux-musl
-          - packager: deb
-            arch: amd64
-            target: x86_64-unknown-linux-musl
-          - packager: deb
-            arch: arm64
-            target: aarch64-unknown-linux-musl
-          - packager: rpm
-            arch: amd64
-            target: x86_64-unknown-linux-musl
-          - packager: rpm
-            arch: arm64
-            target: aarch64-unknown-linux-musl
-          - packager: archlinux
-            arch: amd64
-            target: x86_64-unknown-linux-gnu
-          - packager: archlinux
-            arch: arm64
-            target: aarch64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup nfpm
-        shell: bash
-        run: |
-          curl -sSfLo /tmp/nfpm.tar.gz https://github.com/goreleaser/nfpm/releases/download/v2.28.0/nfpm_2.28.0_Linux_x86_64.tar.gz
-          tar -xzf /tmp/nfpm.tar.gz -C /tmp
-          sudo mv /tmp/nfpm /usr/local/bin/nfpm
-      - name: Setup yq
-        shell: bash
-        run: |
-          curl -sSfLo /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          chmod +x /usr/local/bin/yq
-      - name: Download
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist/pkg
-          gh release download ${{ needs.check.outputs.new_version }} --pattern "lakesql-${{ matrix.target }}.tar.gz" --dir dist/
-          tar -xzf dist/lakesql-${{ matrix.target }}.tar.gz -C dist/
-      - name: Package
-        shell: bash
-        run: |
-          yq -i '.arch = "${{ matrix.arch }}"' nfpm.yaml
-          yq -i '.version = "${{ needs.check.outputs.new_version }}"' nfpm.yaml
-          nfpm package --packager ${{ matrix.packager }} --target dist/pkg/
-      - name: Publish
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload ${{ needs.check.outputs.new_version }} dist/pkg/* --clobber
-
-  bindings_python:
-    needs: [check, build_linux]
-    if: needs.check.outputs.version_changed == 'true'
-    uses: ./.github/workflows/bindings.python.yml
-    secrets: inherit
-
-  bindings_python_publish:
-    needs: bindings_python
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    environment:
-      name: pypi.org
-      url: https://pypi.org/p/lake-driver/
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: bindings/python/artifacts
-          pattern: bindings-python-*
-          merge-multiple: true
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@unstable/v1
-        with:
-          skip-existing: true
-          packages-dir: bindings/python/artifacts
-
-  bindings_nodejs:
-    needs: [check, build_linux]
-    if: needs.check.outputs.version_changed == 'true'
-    uses: ./.github/workflows/bindings.nodejs.yml
-    secrets: inherit
-
-  bindings_nodejs_publish:
-    needs: bindings_nodejs
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    environment:
-      name: npmjs.com
-      url: https://www.npmjs.com/package/lake-driver
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-      - name: Corepack
-        working-directory: bindings/nodejs
-        run: npm i -g --force corepack && corepack enable
-      - name: Install dependencies
-        working-directory: bindings/nodejs
-        run: pnpm install
-      - name: Download all artifacts
+      - name: Download Binary Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: bindings/nodejs/artifacts
-          pattern: bindings-nodejs-*
+          path: dist
+          pattern: binary-*
           merge-multiple: true
-      - name: Move artifacts
-        shell: bash
-        working-directory: bindings/nodejs
+      - name: Prepare Release Metadata
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
         run: |
-          ls -lRh artifacts
-          pnpm napi artifacts
-          ls -lRh npm
-      - name: Add LICENSE
-        run: cp LICENSE ./bindings/nodejs
-      - name: Publish
-        working-directory: bindings/nodejs
-        run: npm publish --access public --provenance
+          set -euo pipefail
+          ls -l dist
+          (
+            cd dist
+            sha256sum lakesql-*.tar.gz | LC_ALL=C sort > checksums.txt
+          )
+          cat > dist/latest.json <<EOF
+          {
+            "version": "${VERSION}"
+          }
+          EOF
+      - name: Publish binaries, installer, and metadata to S3
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL || secrets.R2_ENDPOINT_URL }}
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          endpoint_args=()
+          if [ -n "${AWS_ENDPOINT_URL:-}" ]; then
+            endpoint_args+=(--endpoint-url "${AWS_ENDPOINT_URL}")
+          fi
+
+          for file in dist/lakesql-*.tar.gz dist/checksums.txt; do
+            aws "${endpoint_args[@]}" s3 cp \
+              "${file}" \
+              "s3://lakesql-binaries/lakesql/${VERSION}/$(basename "${file}")" \
+              --no-progress \
+              --checksum-algorithm=CRC32
+          done
+
+          aws "${endpoint_args[@]}" s3 cp \
+            install/lakesql.sh \
+            s3://lakesql-binaries/install/lakesql.sh \
+            --no-progress \
+            --checksum-algorithm=CRC32
+
+          aws "${endpoint_args[@]}" s3 cp \
+            dist/latest.json \
+            s3://lakesql-binaries/lakesql/latest.json \
+            --no-progress \
+            --checksum-algorithm=CRC32

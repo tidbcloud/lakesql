@@ -1,5 +1,5 @@
-name: 'Publish Binary'
-description: 'Publish Binary to GitHub Releases and Cloudflare R2'
+name: "Package Binary"
+description: "Package LakeSQL release archives for S3 publishing"
 inputs:
   os:
     description: "Operating system"
@@ -10,42 +10,25 @@ inputs:
   version:
     description: "Release version"
     required: true
+outputs:
+  file:
+    description: "Packaged archive name"
+    value: ${{ steps.package.outputs.file }}
 runs:
   using: "composite"
   steps:
-
     - name: Pack binary
       id: package
       shell: bash
       run: |
         mkdir -p dist
-        case ${{ inputs.os }} in
-          linux)
-            tar -czf dist/lakesql-${{ inputs.target }}.tar.gz -C target/${{ inputs.target }}/release bendsql
-            echo "file=lakesql-${{ inputs.target }}.tar.gz" >> $GITHUB_OUTPUT
-            ;;
-          macos)
-            tar -czf dist/lakesql-${{ inputs.target }}.tar.gz -C target/${{ inputs.target }}/release bendsql
-            echo "file=lakesql-${{ inputs.target }}.tar.gz" >> $GITHUB_OUTPUT
-            ;;
-          windows)
-            7z a -tzip dist/lakesql-${{ inputs.target }}.zip target/${{ inputs.target }}/release/bendsql.exe
-            echo "file=lakesql-${{ inputs.target }}.zip" >> $GITHUB_OUTPUT
+        case "${{ inputs.os }}" in
+          linux|macos)
+            tar -czf "dist/lakesql-${{ inputs.target }}.tar.gz" -C "target/${{ inputs.target }}/release" lakesql
+            echo "file=lakesql-${{ inputs.target }}.tar.gz" >> "$GITHUB_OUTPUT"
             ;;
           *)
             echo "Unsupported OS: ${{ inputs.os }}"
             exit 1
             ;;
         esac
-
-    - name: Publish to Github Releases
-      id: name
-      shell: bash
-      run: |
-        gh release upload ${{ inputs.version }} dist/${{ steps.package.outputs.file }} --clobber
-
-    - name: Upload package to Cloudflare R2
-      id: upload
-      shell: bash
-      run: |
-        aws s3 cp dist/${{ steps.package.outputs.file }} s3://repo/lakesql/${{ inputs.version }}/${{ steps.package.outputs.file }} --no-progress --checksum-algorithm=CRC32

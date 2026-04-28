@@ -23,61 +23,38 @@ TiDB Cloud Lake Native Client in Rust
 ### Installation script
 
 ```bash
-curl -fsSL https://repo.tidbcloud.com/install/lakesql.sh | bash
+curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash
 ```
 
 or
 
 ```bash
-curl -fsSL https://repo.tidbcloud.com/install/lakesql.sh | bash -s -- -y --prefix /usr/local
-```
-
-### Cargo:
-
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) is recommended:
-
-```bash
-cargo binstall lakesql
-```
-
-Or alternatively build from source:
-
-```bash
-cargo install lakesql
-```
-
-### Homebrew:
-
-```bash
-brew install tidbcloud/homebrew-tap/lakesql
-```
-
-### Apt:
-
-- Using DEB822-STYLE format on Ubuntu-22.04/Debian-12 and later:
-
-```bash
-sudo curl -L -o /etc/apt/sources.list.d/tidbcloud.sources https://repo.tidbcloud.com/deb/tidbcloud.sources
-```
-
-- Using old format on Ubuntu-20.04/Debian-11 and earlier:
-
-```bash
-sudo curl -L -o /usr/share/keyrings/tidbcloud-keyring.gpg https://repo.tidbcloud.com/deb/tidbcloud.gpg
-sudo curl -L -o /etc/apt/sources.list.d/tidbcloud.list https://repo.tidbcloud.com/deb/tidbcloud.list
-```
-
-Then install lakesql:
-
-```bash
-sudo apt update
-
-sudo apt install lakesql
+curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash -s -- -y --prefix /usr/local
 ```
 
 ### Manually:
 
-Check for latest version on [GitHub Release](https://github.com/tidbcloud/lakesql/releases)
+1. Resolve the latest version:
+
+```bash
+curl -fsSL https://lakesql-bin.tidbcloud.com/lakesql/latest.json
+```
+
+2. Download the archive that matches your platform:
+
+```text
+https://lakesql-bin.tidbcloud.com/lakesql/vX.Y.Z/lakesql-<target>.tar.gz
+```
+
+Supported targets in the initial S3-only release flow:
+
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+
+Other distribution channels such as Cargo registry publishing, Homebrew, and Apt are out of scope for the initial release workflow and will be added later.
 
 ## Usage
 
