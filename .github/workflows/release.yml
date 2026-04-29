@@ -6,12 +6,14 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check:
     name: Check version and create release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version_changed: ${{ steps.check.outputs.version_changed }}
       new_version: ${{ steps.check.outputs.new_version }}
@@ -145,8 +147,16 @@ jobs:
     needs: [check, build_linux, build_other]
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::997599125997:role/github-actions-lakesql-s3
+          aws-region: us-west-2
       - name: Download Binary Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -171,34 +181,32 @@ jobs:
       - name: Publish binaries, installer, and metadata to S3
         shell: bash
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL || secrets.R2_ENDPOINT_URL }}
           VERSION: ${{ needs.check.outputs.new_version }}
         run: |
           set -euo pipefail
-          endpoint_args=()
-          if [ -n "${AWS_ENDPOINT_URL:-}" ]; then
-            endpoint_args+=(--endpoint-url "${AWS_ENDPOINT_URL}")
-          fi
 
           for file in dist/lakesql-*.tar.gz dist/checksums.txt; do
-            aws "${endpoint_args[@]}" s3 cp \
+            aws s3 cp \
               "${file}" \
               "s3://lakesql-binaries/lakesql/${VERSION}/$(basename "${file}")" \
               --no-progress \
               --checksum-algorithm=CRC32
           done
 
-          aws "${endpoint_args[@]}" s3 cp \
+          aws s3 cp \
             install/lakesql.sh \
             s3://lakesql-binaries/install/lakesql.sh \
             --no-progress \
             --checksum-algorithm=CRC32
 
-          aws "${endpoint_args[@]}" s3 cp \
+          aws s3 cp \
             dist/latest.json \
             s3://lakesql-binaries/lakesql/latest.json \
             --no-progress \
             --checksum-algorithm=CRC32
+      - name: Invalidate CloudFront cache for mutable objects
+        shell: bash
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E3R5GDE9Y8EDPY \
+            --paths /install/lakesql.sh /lakesql/latest.json
