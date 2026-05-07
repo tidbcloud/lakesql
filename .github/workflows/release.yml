@@ -11,7 +11,7 @@ permissions:
 jobs:
   check:
     name: Check version and create release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -24,66 +24,114 @@ jobs:
 
       - name: Check for version change
         id: check
-        run: |
-          # Get the current version from Cargo.toml
-          CURRENT_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-
-          # Get the previous version from the last commit
-          git checkout HEAD~1 -- Cargo.toml 2>/dev/null || true
-          if [ -f Cargo.toml ]; then
-            PREVIOUS_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-            git checkout HEAD -- Cargo.toml
-          else
-            PREVIOUS_VERSION=""
-          fi
-
-          echo "Current version: $CURRENT_VERSION"
-          echo "Previous version: $PREVIOUS_VERSION"
-
-          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ] && [ -n "$CURRENT_VERSION" ]; then
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-            echo "new_version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "Version changed from $PREVIOUS_VERSION to $CURRENT_VERSION"
-          else
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-            echo "No version change detected"
-          fi
-
-      - name: Validate npm package versions
         shell: bash
         run: |
           python3 <<'PY'
           import json
+          import os
+          import subprocess
+          import tomllib
           from pathlib import Path
 
-          cargo_version = None
-          in_workspace_package = False
-          for line in Path("Cargo.toml").read_text().splitlines():
-              stripped = line.strip()
-              if stripped.startswith("[") and stripped != "[workspace.package]":
-                  in_workspace_package = False
-              if stripped == "[workspace.package]":
-                  in_workspace_package = True
-                  continue
-              if in_workspace_package and stripped.startswith("version = "):
-                  cargo_version = stripped.split('"')[1]
-                  break
-
-          if cargo_version is None:
-              raise SystemExit("unable to resolve workspace version from Cargo.toml")
-
-          package_files = [
+          INTERNAL_CRATES = (
+              "lake-client",
+              "lake-driver",
+              "lake-driver-core",
+              "lake-driver-macros",
+          )
+          NODE_PACKAGE_FILES = [
               Path("bindings/nodejs/package.json"),
               *sorted(Path("bindings/nodejs/npm").glob("*/package.json")),
           ]
-          mismatched = []
-          for package_file in package_files:
-              version = json.loads(package_file.read_text())["version"]
-              if version != cargo_version:
-                  mismatched.append(f"{package_file}: {version} != {cargo_version}")
 
-          if mismatched:
-              raise SystemExit("npm package version mismatch:\n" + "\n".join(mismatched))
+          def git_show(path: str, ref: str) -> str | None:
+              try:
+                  return subprocess.check_output(
+                      ["git", "show", f"{ref}:{path}"],
+                      text=True,
+                  )
+              except subprocess.CalledProcessError:
+                  return None
+
+          def read_workspace_version(cargo_text: str) -> str:
+              cargo = tomllib.loads(cargo_text)
+              return cargo["workspace"]["package"]["version"]
+
+          def read_internal_dep_versions(cargo_text: str) -> dict[str, str]:
+              cargo = tomllib.loads(cargo_text)
+              deps = cargo["workspace"]["dependencies"]
+              return {name: deps[name]["version"] for name in INTERNAL_CRATES}
+
+          def read_node_versions(ref: str | None = None) -> dict[str, str]:
+              versions: dict[str, str] = {}
+              for package_file in NODE_PACKAGE_FILES:
+                  if ref is None:
+                      text = package_file.read_text()
+                  else:
+                      text = git_show(str(package_file), ref)
+                      if text is None:
+                          raise SystemExit(f"missing {package_file} in {ref}")
+                  versions[str(package_file)] = json.loads(text)["version"]
+              return versions
+
+          current_cargo_text = Path("Cargo.toml").read_text()
+          current_version = read_workspace_version(current_cargo_text)
+          current_internal_versions = read_internal_dep_versions(current_cargo_text)
+          current_node_versions = read_node_versions()
+
+          invalid_internal_versions = [
+              f"{name}: {version} != {current_version}"
+              for name, version in current_internal_versions.items()
+              if version != current_version
+          ]
+          invalid_node_versions = [
+              f"{path}: {version} != {current_version}"
+              for path, version in current_node_versions.items()
+              if version != current_version
+          ]
+          if invalid_internal_versions or invalid_node_versions:
+              details = "\n".join(invalid_internal_versions + invalid_node_versions)
+              raise SystemExit(
+                  "crate and Node.js package versions must match the workspace version:\n"
+                  + details
+              )
+
+          previous_cargo_text = git_show("Cargo.toml", "HEAD~1")
+          previous_node_root = git_show("bindings/nodejs/package.json", "HEAD~1")
+
+          previous_version = (
+              read_workspace_version(previous_cargo_text)
+              if previous_cargo_text is not None
+              else ""
+          )
+          previous_node_version = (
+              json.loads(previous_node_root)["version"]
+              if previous_node_root is not None
+              else ""
+          )
+
+          crate_changed = bool(current_version) and current_version != previous_version
+          node_changed = (
+              bool(current_node_versions["bindings/nodejs/package.json"])
+              and current_node_versions["bindings/nodejs/package.json"] != previous_node_version
+          )
+
+          if crate_changed != node_changed:
+              raise SystemExit(
+                  "crate and Node.js versions must be bumped together before release: "
+                  f"cargo {previous_version or '<missing>'} -> {current_version}, "
+                  f"node {previous_node_version or '<missing>'} -> "
+                  f"{current_node_versions['bindings/nodejs/package.json']}"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              if crate_changed:
+                  output.write("version_changed=true\n")
+                  output.write(f"new_version=v{current_version}\n")
+                  print(f"Version changed from {previous_version} to {current_version}")
+              else:
+                  output.write("version_changed=false\n")
+                  print("No version change detected")
           PY
 
       - name: Create GitHub Release
@@ -104,12 +152,20 @@ jobs:
     name: build ${{ matrix.target }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-    runs-on: ubuntu-latest
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            build_tool: cargo
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            build_tool: cargo
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            build_tool: cross
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            build_tool: cross
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -117,15 +173,18 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - name: Setup Cross
+        if: endsWith(matrix.target, '-musl')
         shell: bash
         run: |
-          curl -sSfLo /tmp/cross.tar.gz https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz
-          tar -xzf /tmp/cross.tar.gz -C /tmp
-          sudo mv /tmp/cross /usr/local/bin/cross
+          cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5
       - name: Build
         shell: bash
         run: |
-          cross build --release --target=${{ matrix.target }} --bin=lakesql
+          if [[ "${{ matrix.build_tool }}" == "cross" ]]; then
+            cross build --release --target="${{ matrix.target }}" --bin=lakesql
+          else
+            cargo build --release --target="${{ matrix.target }}" --bin=lakesql
+          fi
       - name: Package Binary
         id: package
         uses: ./.github/actions/publish_binary
@@ -147,16 +206,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos
+          - runner: macos-15
+            os: macos
             target: aarch64-apple-darwin
-          - os: macos
+          - runner: macos-15-intel
+            os: macos
             target: x86_64-apple-darwin
           # FIXME: Windows build is broken
           # - os: windows
           #   target: aarch64-pc-windows-msvc
           # - os: windows
           #   target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -192,42 +253,42 @@ jobs:
           - os: linux
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             wheel: py39-abi
           - os: linux
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             wheel: cp38
           - os: linux
             arch: aarch64
             target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             wheel: py39-abi
           - os: linux
             arch: aarch64
             target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             wheel: cp38
           - os: macos
             arch: x86_64
             target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-15-intel
             wheel: py39-abi
           - os: macos
             arch: x86_64
             target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-15-intel
             wheel: cp38
           - os: macos
             arch: aarch64
             target: aarch64-apple-darwin
-            runner: macos-latest
+            runner: macos-15
             wheel: py39-abi
           - os: macos
             arch: aarch64
             target: aarch64-apple-darwin
-            runner: macos-latest
+            runner: macos-15
             wheel: cp38
     steps:
       - uses: actions/checkout@v4
@@ -274,7 +335,7 @@ jobs:
     needs: check
     if: needs.check.outputs.version_changed == 'true'
     name: build python sdist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
@@ -301,17 +362,17 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04-arm
           - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - target: aarch64-unknown-linux-musl
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
           - target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-15-intel
           - target: aarch64-apple-darwin
-            runner: macos-latest
+            runner: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust toolchain
@@ -363,7 +424,7 @@ jobs:
       - build_python_sdist
       - build_nodejs
     if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -437,7 +498,7 @@ jobs:
       - build_python_sdist
       - build_nodejs
     if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
@@ -518,7 +579,7 @@ jobs:
       - build_python_sdist
       - build_nodejs
     if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -545,7 +606,7 @@ jobs:
       - build_python_sdist
       - build_nodejs
     if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
