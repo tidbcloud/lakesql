@@ -367,7 +367,7 @@ jobs:
           path: bindings/nodejs/*.node
           if-no-files-found: error
 
-  publish_s3:
+  release_gate:
     needs:
       - check
       - build_cli_linux
@@ -377,6 +377,20 @@ jobs:
       - build_nodejs
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
+    environment: release-gate
+    steps:
+      - name: Confirm release approval
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: echo "Release gate approved for ${VERSION}"
+
+  publish_s3:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-s3
     permissions:
       contents: read
       id-token: write
@@ -444,13 +458,10 @@ jobs:
   publish_crates:
     needs:
       - check
-      - build_cli_linux
-      - build_cli_macos
-      - build_python_wheels
-      - build_python_sdist
-      - build_nodejs
+      - release_gate
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
+    environment: release-crates
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
@@ -525,13 +536,10 @@ jobs:
   publish_pypi:
     needs:
       - check
-      - build_cli_linux
-      - build_cli_macos
-      - build_python_wheels
-      - build_python_sdist
-      - build_nodejs
+      - release_gate
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
+    environment: release-pypi
     permissions:
       contents: read
       id-token: write
@@ -552,13 +560,10 @@ jobs:
   publish_npm:
     needs:
       - check
-      - build_cli_linux
-      - build_cli_macos
-      - build_python_wheels
-      - build_python_sdist
-      - build_nodejs
+      - release_gate
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
+    environment: release-npm
     permissions:
       contents: read
       id-token: write
