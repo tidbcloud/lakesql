@@ -22,117 +22,77 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Install yq
+        shell: bash
+        run: |
+          sudo curl -fsSL \
+            https://github.com/mikefarah/yq/releases/download/v4.52.5/yq_linux_amd64 \
+            -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
       - name: Check for version change
         id: check
         shell: bash
         run: |
-          python3 <<'PY'
-          import json
-          import os
-          import subprocess
-          import tomllib
-          from pathlib import Path
+          set -euo pipefail
 
-          INTERNAL_CRATES = (
-              "lake-client",
-              "lake-driver",
-              "lake-driver-core",
-              "lake-driver-macros",
-          )
-          NODE_PACKAGE_FILES = [
-              Path("bindings/nodejs/package.json"),
-              *sorted(Path("bindings/nodejs/npm").glob("*/package.json")),
-          ]
+          current_version=$(yq -r '.workspace.package.version' Cargo.toml)
+          current_node_version=$(yq -r '.version' bindings/nodejs/package.json)
 
-          def git_show(path: str, ref: str) -> str | None:
-              try:
-                  return subprocess.check_output(
-                      ["git", "show", f"{ref}:{path}"],
-                      text=True,
-                  )
-              except subprocess.CalledProcessError:
-                  return None
+          for dep in lake-client lake-driver lake-driver-core lake-driver-macros; do
+            dep_version=$(yq -r ".workspace.dependencies.\"${dep}\".version" Cargo.toml)
+            if [[ "${dep_version}" != "${current_version}" ]]; then
+              echo "Workspace dependency ${dep} version ${dep_version} does not match workspace version ${current_version}" >&2
+              exit 1
+            fi
+          done
 
-          def read_workspace_version(cargo_text: str) -> str:
-              cargo = tomllib.loads(cargo_text)
-              return cargo["workspace"]["package"]["version"]
+          for package in bindings/nodejs/package.json bindings/nodejs/npm/*/package.json; do
+            package_version=$(yq -r '.version' "${package}")
+            if [[ "${package_version}" != "${current_version}" ]]; then
+              echo "Node package ${package} version ${package_version} does not match workspace version ${current_version}" >&2
+              exit 1
+            fi
+          done
 
-          def read_internal_dep_versions(cargo_text: str) -> dict[str, str]:
-              cargo = tomllib.loads(cargo_text)
-              deps = cargo["workspace"]["dependencies"]
-              return {name: deps[name]["version"] for name in INTERNAL_CRATES}
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "${tmpdir}"' EXIT
 
-          def read_node_versions(ref: str | None = None) -> dict[str, str]:
-              versions: dict[str, str] = {}
-              for package_file in NODE_PACKAGE_FILES:
-                  if ref is None:
-                      text = package_file.read_text()
-                  else:
-                      text = git_show(str(package_file), ref)
-                      if text is None:
-                          raise SystemExit(f"missing {package_file} in {ref}")
-                  versions[str(package_file)] = json.loads(text)["version"]
-              return versions
+          previous_version=""
+          previous_node_version=""
 
-          current_cargo_text = Path("Cargo.toml").read_text()
-          current_version = read_workspace_version(current_cargo_text)
-          current_internal_versions = read_internal_dep_versions(current_cargo_text)
-          current_node_versions = read_node_versions()
+          if git show HEAD~1:Cargo.toml > "${tmpdir}/Cargo.toml" 2>/dev/null; then
+            previous_version=$(yq -r '.workspace.package.version' "${tmpdir}/Cargo.toml")
+          fi
 
-          invalid_internal_versions = [
-              f"{name}: {version} != {current_version}"
-              for name, version in current_internal_versions.items()
-              if version != current_version
-          ]
-          invalid_node_versions = [
-              f"{path}: {version} != {current_version}"
-              for path, version in current_node_versions.items()
-              if version != current_version
-          ]
-          if invalid_internal_versions or invalid_node_versions:
-              details = "\n".join(invalid_internal_versions + invalid_node_versions)
-              raise SystemExit(
-                  "crate and Node.js package versions must match the workspace version:\n"
-                  + details
-              )
+          if git show HEAD~1:bindings/nodejs/package.json > "${tmpdir}/package.json" 2>/dev/null; then
+            previous_node_version=$(yq -r '.version' "${tmpdir}/package.json")
+          fi
 
-          previous_cargo_text = git_show("Cargo.toml", "HEAD~1")
-          previous_node_root = git_show("bindings/nodejs/package.json", "HEAD~1")
+          crate_changed=false
+          node_changed=false
 
-          previous_version = (
-              read_workspace_version(previous_cargo_text)
-              if previous_cargo_text is not None
-              else ""
-          )
-          previous_node_version = (
-              json.loads(previous_node_root)["version"]
-              if previous_node_root is not None
-              else ""
-          )
+          if [[ -n "${current_version}" && "${current_version}" != "${previous_version}" ]]; then
+            crate_changed=true
+          fi
 
-          crate_changed = bool(current_version) and current_version != previous_version
-          node_changed = (
-              bool(current_node_versions["bindings/nodejs/package.json"])
-              and current_node_versions["bindings/nodejs/package.json"] != previous_node_version
-          )
+          if [[ -n "${current_node_version}" && "${current_node_version}" != "${previous_node_version}" ]]; then
+            node_changed=true
+          fi
 
-          if crate_changed != node_changed:
-              raise SystemExit(
-                  "crate and Node.js versions must be bumped together before release: "
-                  f"cargo {previous_version or '<missing>'} -> {current_version}, "
-                  f"node {previous_node_version or '<missing>'} -> "
-                  f"{current_node_versions['bindings/nodejs/package.json']}"
-              )
+          if [[ "${crate_changed}" != "${node_changed}" ]]; then
+            echo "crate and Node.js versions must be bumped together before release: cargo ${previous_version:-<missing>} -> ${current_version}, node ${previous_node_version:-<missing>} -> ${current_node_version}" >&2
+            exit 1
+          fi
 
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              if crate_changed:
-                  output.write("version_changed=true\n")
-                  output.write(f"new_version=v{current_version}\n")
-                  print(f"Version changed from {previous_version} to {current_version}")
-              else:
-                  output.write("version_changed=false\n")
-                  print("No version change detected")
-          PY
+          if [[ "${crate_changed}" == "true" ]]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "new_version=v${current_version}" >> "${GITHUB_OUTPUT}"
+            echo "Version changed from ${previous_version} to ${current_version}"
+          else
+            echo "version_changed=false" >> "${GITHUB_OUTPUT}"
+            echo "No version change detected"
+          fi
 
       - name: Create GitHub Release
         if: steps.check.outputs.version_changed == 'true'
