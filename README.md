@@ -46,15 +46,22 @@ curl -fsSL https://lakesql-bin.tidbcloud.com/lakesql/latest.json
 https://lakesql-bin.tidbcloud.com/lakesql/vX.Y.Z/lakesql-<target>.tar.gz
 ```
 
-Supported targets in the initial S3-only release flow:
+Supported targets in the binary release flow:
 
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 - `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 
-Other distribution channels such as Cargo registry publishing, Homebrew, and Apt are out of scope for the initial release workflow and will be added later.
+Additional package registries:
+
+- Rust CLI source install: `cargo install lakesql`
+- Python bindings: `pip install tidbcloudlake-driver`
+- Node.js bindings: `npm install tidbcloudlake-driver`
+
+Homebrew and OS package feeds remain out of scope for the current release workflow.
 
 ## Usage
 
