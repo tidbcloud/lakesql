@@ -11,7 +11,7 @@ permissions:
 jobs:
   check:
     name: Check version and create release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -24,28 +24,65 @@ jobs:
 
       - name: Check for version change
         id: check
+        shell: bash
         run: |
-          # Get the current version from Cargo.toml
-          CURRENT_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          set -euo pipefail
 
-          # Get the previous version from the last commit
-          git checkout HEAD~1 -- Cargo.toml 2>/dev/null || true
-          if [ -f Cargo.toml ]; then
-            PREVIOUS_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-            git checkout HEAD -- Cargo.toml
-          else
-            PREVIOUS_VERSION=""
+          current_version=$(yq -r '.workspace.package.version' Cargo.toml)
+          current_node_version=$(yq -r '.version' bindings/nodejs/package.json)
+
+          for dep in lake-client lake-driver lake-driver-core lake-driver-macros; do
+            dep_version=$(yq -r ".workspace.dependencies.\"${dep}\".version" Cargo.toml)
+            if [[ "${dep_version}" != "${current_version}" ]]; then
+              echo "Workspace dependency ${dep} version ${dep_version} does not match workspace version ${current_version}" >&2
+              exit 1
+            fi
+          done
+
+          for package in bindings/nodejs/package.json bindings/nodejs/npm/*/package.json; do
+            package_version=$(yq -r '.version' "${package}")
+            if [[ "${package_version}" != "${current_version}" ]]; then
+              echo "Node package ${package} version ${package_version} does not match workspace version ${current_version}" >&2
+              exit 1
+            fi
+          done
+
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "${tmpdir}"' EXIT
+
+          previous_version=""
+          previous_node_version=""
+
+          if git show HEAD~1:Cargo.toml > "${tmpdir}/Cargo.toml" 2>/dev/null; then
+            previous_version=$(yq -r '.workspace.package.version' "${tmpdir}/Cargo.toml")
           fi
 
-          echo "Current version: $CURRENT_VERSION"
-          echo "Previous version: $PREVIOUS_VERSION"
+          if git show HEAD~1:bindings/nodejs/package.json > "${tmpdir}/package.json" 2>/dev/null; then
+            previous_node_version=$(yq -r '.version' "${tmpdir}/package.json")
+          fi
 
-          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ] && [ -n "$CURRENT_VERSION" ]; then
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-            echo "new_version=v$CURRENT_VERSION" >> $GITHUB_OUTPUT
-            echo "Version changed from $PREVIOUS_VERSION to $CURRENT_VERSION"
+          crate_changed=false
+          node_changed=false
+
+          if [[ -n "${current_version}" && "${current_version}" != "${previous_version}" ]]; then
+            crate_changed=true
+          fi
+
+          if [[ -n "${current_node_version}" && "${current_node_version}" != "${previous_node_version}" ]]; then
+            node_changed=true
+          fi
+
+          if [[ "${crate_changed}" != "${node_changed}" ]]; then
+            echo "crate and Node.js versions must be bumped together before release: cargo ${previous_version:-<missing>} -> ${current_version}, node ${previous_node_version:-<missing>} -> ${current_node_version}" >&2
+            exit 1
+          fi
+
+          if [[ "${crate_changed}" == "true" ]]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "new_version=v${current_version}" >> "${GITHUB_OUTPUT}"
+            echo "Version changed from ${previous_version} to ${current_version}"
           else
-            echo "version_changed=false" >> $GITHUB_OUTPUT
+            echo "version_changed=false" >> "${GITHUB_OUTPUT}"
             echo "No version change detected"
           fi
 
@@ -61,17 +98,26 @@ jobs:
             --generate-notes \
             || echo "Release already exists"
 
-  build_linux:
+  build_cli_linux:
     needs: check
     if: needs.check.outputs.version_changed == 'true'
     name: build ${{ matrix.target }}
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-    runs-on: ubuntu-latest
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            build_tool: cargo
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            build_tool: cargo
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            build_tool: cross
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            build_tool: cross
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -79,15 +125,18 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - name: Setup Cross
+        if: endsWith(matrix.target, '-musl')
         shell: bash
         run: |
-          curl -sSfLo /tmp/cross.tar.gz https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz
-          tar -xzf /tmp/cross.tar.gz -C /tmp
-          sudo mv /tmp/cross /usr/local/bin/cross
+          cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5
       - name: Build
         shell: bash
         run: |
-          cross build --release --target=${{ matrix.target }} --bin=lakesql
+          if [[ "${{ matrix.build_tool }}" == "cross" ]]; then
+            cross build --release --target="${{ matrix.target }}" --bin=lakesql
+          else
+            cargo build --release --target="${{ matrix.target }}" --bin=lakesql
+          fi
       - name: Package Binary
         id: package
         uses: ./.github/actions/publish_binary
@@ -102,23 +151,25 @@ jobs:
           path: dist/${{ steps.package.outputs.file }}
           if-no-files-found: error
 
-  build_other:
+  build_cli_macos:
     needs: check
     if: needs.check.outputs.version_changed == 'true'
     name: build ${{ matrix.target }}
     strategy:
       matrix:
         include:
-          - os: macos
+          - runner: macos-15
+            os: macos
             target: aarch64-apple-darwin
-          - os: macos
+          - runner: macos-15-intel
+            os: macos
             target: x86_64-apple-darwin
           # FIXME: Windows build is broken
           # - os: windows
           #   target: aarch64-pc-windows-msvc
           # - os: windows
           #   target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -143,10 +194,203 @@ jobs:
           path: dist/${{ steps.package.outputs.file }}
           if-no-files-found: error
 
-  publish_s3:
-    needs: [check, build_linux, build_other]
+  build_python_wheels:
+    needs: check
     if: needs.check.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
+    name: build python ${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.wheel }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            wheel: py39-abi
+          - os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            wheel: cp38
+          - os: linux
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            wheel: py39-abi
+          - os: linux
+            arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            wheel: cp38
+          - os: macos
+            arch: x86_64
+            target: x86_64-apple-darwin
+            runner: macos-15-intel
+            wheel: py39-abi
+          - os: macos
+            arch: x86_64
+            target: x86_64-apple-darwin
+            runner: macos-15-intel
+            wheel: cp38
+          - os: macos
+            arch: aarch64
+            target: aarch64-apple-darwin
+            runner: macos-15
+            wheel: py39-abi
+          - os: macos
+            arch: aarch64
+            target: aarch64-apple-darwin
+            runner: macos-15
+            wheel: cp38
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get opts
+        id: opts
+        shell: bash
+        run: |
+          if [[ "${{ matrix.wheel }}" == "py39-abi" ]]; then
+            echo "BUILD_ARGS=--release --strip --out dist --features py39-abi --interpreter python3.9" >> "$GITHUB_OUTPUT"
+          else
+            echo "BUILD_ARGS=--release --strip --out dist --no-default-features --features cp38 --interpreter python3.8" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            echo "MANYLINUX=2_28" >> "$GITHUB_OUTPUT"
+          else
+            echo "MANYLINUX=auto" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          cache-key: release-bindings-python-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.wheel }}
+          target: ${{ matrix.target }}
+      - name: Setup Python 3.8 (cp38 wheels)
+        if: matrix.wheel == 'cp38' && matrix.os != 'linux'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          manylinux: ${{ steps.opts.outputs.MANYLINUX }}
+          sccache: "true"
+          args: ${{ steps.opts.outputs.BUILD_ARGS }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-python-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.wheel }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  build_python_sdist:
+    needs: check
+    if: needs.check.outputs.version_changed == 'true'
+    name: build python sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install maturin
+        run: python -m pip install "maturin>=1.0,<2.0"
+      - name: Build sdist
+        run: maturin sdist --manifest-path bindings/python/Cargo.toml --out bindings/python/dist
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-python-sdist
+          path: bindings/python/dist/*.tar.gz
+          if-no-files-found: error
+
+  build_nodejs:
+    needs: check
+    if: needs.check.outputs.version_changed == 'true'
+    name: build nodejs ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          cache-key: release-bindings-nodejs-${{ matrix.target }}
+          target: ${{ matrix.target }}
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install ziglang
+        if: contains(matrix.target, '-unknown-linux-')
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.11.0
+      - name: Corepack
+        working-directory: bindings/nodejs
+        run: npm i -g --force corepack && corepack enable
+      - name: Install dependencies
+        working-directory: bindings/nodejs
+        run: pnpm install
+      - name: Build
+        working-directory: bindings/nodejs
+        shell: bash
+        env:
+          NAPI_TARGET: ${{ matrix.target }}
+          MACOSX_DEPLOYMENT_TARGET: 10.12
+        run: |
+          pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
+          pnpm node ./scripts/header.js
+      - name: Strip for macOS
+        if: endsWith(matrix.target, '-apple-darwin')
+        working-directory: bindings/nodejs
+        run: strip -x *.node
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-nodejs-${{ matrix.target }}
+          path: bindings/nodejs/*.node
+          if-no-files-found: error
+
+  release_gate:
+    needs:
+      - check
+      - build_cli_linux
+      - build_cli_macos
+      - build_python_wheels
+      - build_python_sdist
+      - build_nodejs
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-gate
+    steps:
+      - name: Confirm release approval
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: echo "Release gate approved for ${VERSION}"
+
+  publish_s3:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-s3
     permissions:
       contents: read
       id-token: write
@@ -210,3 +454,159 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id E3R5GDE9Y8EDPY \
             --paths /install/lakesql.sh /lakesql/latest.json
+
+  publish_crates:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-crates
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          cache-key: release-crates
+      - name: Package crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          crates=(
+            lake-driver-macros
+            lake-client
+            lake-driver-core
+            lake-driver
+            lakesql
+          )
+          for crate in "${crates[@]}"; do
+            cargo package --locked -p "${crate}"
+          done
+      - name: Publish crates.io packages
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+
+          crate_exists() {
+            local crate="$1"
+            local version="$2"
+            curl -fsSL "https://crates.io/api/v1/crates/${crate}/${version}" >/dev/null 2>&1
+          }
+
+          publish_crate() {
+            local crate="$1"
+            local version="$2"
+            local attempt=1
+
+            if crate_exists "$crate" "$version"; then
+              echo "${crate} ${version} already published, skipping"
+              return 0
+            fi
+
+            until cargo publish -p "$crate" --locked; do
+              if crate_exists "$crate" "$version"; then
+                echo "${crate} ${version} became available, skipping retry"
+                return 0
+              fi
+              if [[ "$attempt" -ge 5 ]]; then
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              echo "Retrying ${crate} after crates.io index propagation"
+              sleep 30
+            done
+          }
+
+          crates=(
+            lake-driver-macros
+            lake-client
+            lake-driver-core
+            lake-driver
+            lakesql
+          )
+          version="${VERSION#v}"
+          for crate in "${crates[@]}"; do
+            publish_crate "$crate" "$version"
+          done
+
+  publish_pypi:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-python-*
+          path: bindings/python/dist
+          merge-multiple: true
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: bindings/python/dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+
+  publish_npm:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Corepack
+        working-directory: bindings/nodejs
+        run: npm i -g --force corepack && corepack enable
+      - name: Install dependencies
+        working-directory: bindings/nodejs
+        run: pnpm install
+      - name: Create npm dirs
+        working-directory: bindings/nodejs
+        run: pnpm napi create-npm-dirs
+      - name: Download Node.js artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-nodejs-*
+          path: bindings/nodejs/artifacts
+      - name: Move artifacts into npm packages
+        working-directory: bindings/nodejs
+        run: pnpm napi artifacts
+      - name: Publish to npm
+        working-directory: bindings/nodejs
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          version="${VERSION#v}"
+          npm config set provenance true
+          if npm view "tidbcloudlake-driver@${version}" version >/dev/null 2>&1; then
+            echo "tidbcloudlake-driver ${version} already published, skipping"
+            exit 0
+          fi
+          if [[ "$version" == *-* ]]; then
+            npm publish --tag next --access public
+          else
+            npm publish --access public
+          fi
