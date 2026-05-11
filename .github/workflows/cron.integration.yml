@@ -2,13 +2,13 @@ name: Daily Integration Tests
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: "0 0 * * *"
   workflow_dispatch:
   pull_request:
     branches:
       - main
     paths:
-      - '.github/workflows/cron.integration.yml'
+      - ".github/workflows/cron.integration.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,11 +39,11 @@ jobs:
         with:
           cache-key: integration
       - name: Run Core Integration Tests
-        run: make -C tests test-core DATABEND_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-core LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
       - name: Run Driver Integration Tests
-        run: make -C tests test-driver DATABEND_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-driver LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
       - name: Run LakeSQL Integration Tests
-        run: make -C tests test-lakesql DATABEND_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-lakesql LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
 
   build-python:
     name: build-python-${{ matrix.wheel }}
@@ -130,7 +130,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Prepare
         working-directory: tests
-        run: make up DATABEND_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make up LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
@@ -176,7 +176,7 @@ jobs:
         run: pnpm install
       - name: Prepare
         working-directory: tests
-        run: make up DATABEND_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make up LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
@@ -185,7 +185,6 @@ jobs:
       - name: Run Tests
         working-directory: bindings/nodejs
         run: pnpm run test
-
 
   notify:
     if: failure()
