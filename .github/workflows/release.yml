@@ -459,7 +459,9 @@ jobs:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    # if: needs.check.outputs.version_changed == 'true'
+    if: >
+      'false' == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
     env:
@@ -539,7 +541,7 @@ jobs:
       - release_gate
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
-    environment: release-pypi
+    environment: testpypi # pypi
     permissions:
       contents: read
       id-token: write
@@ -550,18 +552,25 @@ jobs:
           pattern: bindings-python-*
           path: bindings/python/dist
           merge-multiple: true
-      - name: Publish to PyPI
+      - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          repository-url: https://test.pypi.org/legacy/
           packages-dir: bindings/python/dist
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
+
+      # - name: Publish to PyPi
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     packages-dir: bindings/python/dist
 
   publish_npm:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    # if: needs.check.outputs.version_changed == 'true'
+    if: >
+      'false' == 'true'
     runs-on: ubuntu-24.04
     environment: release-npm
     permissions:
