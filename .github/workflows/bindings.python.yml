@@ -92,11 +92,11 @@ jobs:
           else
             wheel_args="--no-default-features --features cp38 --interpreter python3.8"
           fi
-          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> $GITHUB_OUTPUT
+          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> "$GITHUB_OUTPUT"
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            echo "MANYLINUX=2_28" >> $GITHUB_OUTPUT
+            echo "MANYLINUX=2_28" >> "$GITHUB_OUTPUT"
           else
-            echo "MANYLINUX=auto" >> $GITHUB_OUTPUT
+            echo "MANYLINUX=auto" >> "$GITHUB_OUTPUT"
           fi
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup

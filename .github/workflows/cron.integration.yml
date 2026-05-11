@@ -10,6 +10,10 @@ on:
     paths:
       - ".github/workflows/cron.integration.yml"
 
+permissions:
+  contents: read
+  packages: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,8 +35,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(gh api repos/tidbcloud/lakesql/releases --jq '.[0].tag_name')
-          echo "version=$version" >> $GITHUB_OUTPUT
-          echo "Running integration tests with Lake version: **$version**" >> $GITHUB_STEP_SUMMARY
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Running integration tests with Lake version: **$version**" >> "$GITHUB_STEP_SUMMARY"
 
   integration:
     needs: version
@@ -42,12 +46,17 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: integration
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Run Core Integration Tests
-        run: make -C tests test-core LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
+        run: make -C tests test-core "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Run Driver Integration Tests
-        run: make -C tests test-driver LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
+        run: make -C tests test-driver "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Run LakeSQL Integration Tests
-        run: make -C tests test-lakesql LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
+        run: make -C tests test-lakesql "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
 
   build-python:
     name: build-python-${{ matrix.wheel }}
@@ -72,7 +81,7 @@ jobs:
           else
             wheel_args="--no-default-features --features cp38 --interpreter python3.8"
           fi
-          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> $GITHUB_OUTPUT
+          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> "$GITHUB_OUTPUT"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -113,7 +122,7 @@ jobs:
         env:
           NAPI_TARGET: x86_64-unknown-linux-gnu
         run: |
-          pnpm napi build --platform --target=$NAPI_TARGET --release --js generated.js
+          pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
           pnpm node ./scripts/header.js
       - uses: actions/upload-artifact@v7
         with:
@@ -132,9 +141,14 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.pyver }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
-        run: make up LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
+        run: make up "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
@@ -178,9 +192,14 @@ jobs:
       - name: Install dependencies
         working-directory: bindings/nodejs
         run: pnpm install
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
-        run: make up LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
+        run: make up "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:

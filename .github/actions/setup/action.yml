@@ -1,16 +1,16 @@
 name: Setup Rust Builder
-description: 'Prepare Rust Build Environment'
+description: "Prepare Rust Build Environment"
 inputs:
   runner:
-    description: 'runner provider'
+    description: "runner provider"
     required: true
-    default: 'github'
+    default: "github"
   cache-key:
-    description: 'the rust cache key suffix'
+    description: "the rust cache key suffix"
     required: false
-    default: ''
+    default: ""
   target:
-    description: 'the rust target to build'
+    description: "the rust target to build"
     required: false
     default: x86_64-unknown-linux-gnu
 

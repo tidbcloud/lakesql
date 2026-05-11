@@ -73,16 +73,16 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: 10.12
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            pnpm napi build --platform --target=$NAPI_TARGET --js generated.js
+            pnpm napi build --platform --target="$NAPI_TARGET" --js generated.js
           else
-            pnpm napi build --platform --target=$NAPI_TARGET --release --js generated.js
+            pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
           fi
           pnpm node ./scripts/header.js
       - name: strip for macos
         if: endsWith(matrix.target, '-apple-darwin')
         working-directory: bindings/nodejs
         run: |
-          strip -x *.node
+          strip -x ./*.node
       - uses: actions/upload-artifact@v7
         with:
           name: bindings-nodejs-${{ matrix.target }}

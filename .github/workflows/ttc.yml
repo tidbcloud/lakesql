@@ -67,12 +67,12 @@ jobs:
         shell: bash
         run: |
           ref_v="${{ github.ref }}"
-          if [[ $ref_v == refs/tags/* ]]; then
+          if [[ "${ref_v}" == refs/tags/* ]]; then
             DOCKER_TAG=${ref_v:10}
           else
             DOCKER_TAG="latest"
           fi
-          echo "tag=${DOCKER_TAG}" >> $GITHUB_OUTPUT
+          echo "tag=${DOCKER_TAG}" >> "$GITHUB_OUTPUT"
       - name: Login to GHCR
         uses: docker/login-action@v4
         with:

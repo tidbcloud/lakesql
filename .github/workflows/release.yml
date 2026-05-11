@@ -359,7 +359,7 @@ jobs:
       - name: Strip for macOS
         if: endsWith(matrix.target, '-apple-darwin')
         working-directory: bindings/nodejs
-        run: strip -x *.node
+        run: strip -x ./*.node
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -459,9 +459,7 @@ jobs:
     needs:
       - check
       - release_gate
-    # if: needs.check.outputs.version_changed == 'true'
-    if: >
-      'false' == 'true'
+    if: vars.ENABLE_PUBLISH_CRATES == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
     # TODO: crates.io does not support OIDC trusted publishing yet.
@@ -570,9 +568,7 @@ jobs:
     needs:
       - check
       - release_gate
-    # if: needs.check.outputs.version_changed == 'true'
-    if: >
-      'false' == 'true'
+    if: vars.ENABLE_PUBLISH_NPM == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-npm
     permissions:
