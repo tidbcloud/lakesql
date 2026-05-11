@@ -5,7 +5,7 @@ runs:
   steps:
 
     - name: Check Apache License Header
-      uses: korandoru/hawkeye@v6
+      uses: korandoru/hawkeye@v3
 
     - name: Typos
       uses: crate-ci/typos@v1.46.1
