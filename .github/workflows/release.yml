@@ -615,7 +615,7 @@ jobs:
             exit 0
           fi
           if [[ "$version" == *-* ]]; then
-            npm publish --tag next --access private
+            npm publish --access public --tag next
           else
-            npm publish --access private
+            npm publish --access public
           fi
