@@ -5,10 +5,10 @@ runs:
   steps:
 
     - name: Check Apache License Header
-      uses: korandoru/hawkeye@v3
+      uses: korandoru/hawkeye@v6
 
     - name: Typos
-      uses: crate-ci/typos@master
+      uses: crate-ci/typos@v1.46.1
 
     - name: Format
       shell: bash

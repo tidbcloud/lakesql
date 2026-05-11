@@ -24,7 +24,7 @@ jobs:
           - aarch64-unknown-linux-musl
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - uses: ./.github/actions/setup
         with:
           cache-key: ttc-${{ matrix.target }}
@@ -36,7 +36,7 @@ jobs:
         run: |
           cross build --bin ttc-server --package lake-ttc --release --target ${{ matrix.target }}
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ttc-binaries-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/ttc-server
@@ -46,14 +46,14 @@ jobs:
     needs: build
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Download build artifacts for x86_64-unknown-linux-musl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ttc-binaries-x86_64-unknown-linux-musl
           path: dist/linux/amd64
       - name: Download build artifacts for aarch64-unknown-linux-musl
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ttc-binaries-aarch64-unknown-linux-musl
           path: dist/linux/arm64
@@ -61,7 +61,7 @@ jobs:
         run: |
           tree dist/
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Set Docker tag
         id: tag
         shell: bash
@@ -74,13 +74,13 @@ jobs:
           fi
           echo "tag=${DOCKER_TAG}" >> $GITHUB_OUTPUT
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: TTC Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           context: .

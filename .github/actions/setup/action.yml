@@ -24,7 +24,7 @@ runs:
         targets: ${{ inputs.target }}
 
     - name: Setup sccache
-      uses: mozilla-actions/sccache-action@main
+      uses: mozilla-actions/sccache-action@v0.0.10
       with:
         disable_annotations: true
 
@@ -48,7 +48,7 @@ runs:
 
     - name: Cache Cargo for Github Runner
       if: inputs.runner == 'github'
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry/
@@ -60,7 +60,7 @@ runs:
 
     - name: Cache Cargo for AWS Self-Hosted Runner
       if: inputs.runner == 'aws'
-      uses: everpcpc/actions-cache@v2
+      uses: everpcpc/actions-cache@v3
       env:
         AWS_REGION: us-east-2
       with:
