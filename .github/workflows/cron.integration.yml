@@ -134,7 +134,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Prepare
         working-directory: tests
-        run: make up LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make up LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
@@ -180,7 +180,7 @@ jobs:
         run: pnpm install
       - name: Prepare
         working-directory: tests
-        run: make up LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make up LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
