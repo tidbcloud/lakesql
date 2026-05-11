@@ -139,8 +139,8 @@ jobs:
       - name: Prepare
         working-directory: tests
         env:
-          LAKESQL_QUERY_VERSION: v1.2.908-nightly
-          LAKESQL_META_VERSION: v1.2.908-nightly
+          LAKESQL_QUERY_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
+          LAKESQL_META_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
         run: make up
       - name: Download artifact
         uses: actions/download-artifact@v8
