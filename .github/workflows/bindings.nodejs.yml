@@ -8,13 +8,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           cache-key: bindings-nodejs-integration
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Corepack
@@ -44,14 +44,14 @@ jobs:
           - { target: x86_64-apple-darwin, runner: macos-latest }
           - { target: aarch64-apple-darwin, runner: macos-latest }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           cache-key: bindings-nodejs-${{ matrix.target }}
           target: ${{ matrix.target }}
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Install ziglang
@@ -73,17 +73,17 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: 10.12
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            pnpm napi build --platform --target=$NAPI_TARGET --js generated.js
+            pnpm napi build --platform --target="$NAPI_TARGET" --js generated.js
           else
-            pnpm napi build --platform --target=$NAPI_TARGET --release --js generated.js
+            pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
           fi
           pnpm node ./scripts/header.js
       - name: strip for macos
         if: endsWith(matrix.target, '-apple-darwin')
         working-directory: bindings/nodejs
         run: |
-          strip -x *.node
-      - uses: actions/upload-artifact@v4
+          strip -x ./*.node
+      - uses: actions/upload-artifact@v7
         with:
           name: bindings-nodejs-${{ matrix.target }}
           path: bindings/nodejs/*.node
@@ -92,13 +92,16 @@ jobs:
     name: integration-${{ matrix.ver }}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
-        ver: ["18", "20", "22"]
+        ver: ["22", "24"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.ver }}
       - name: Corepack
@@ -108,8 +111,13 @@ jobs:
         working-directory: bindings/nodejs
         run: pnpm install
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: bindings-nodejs-x86_64-unknown-linux-gnu
           path: bindings/nodejs
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - run: make -C tests test-bindings-nodejs

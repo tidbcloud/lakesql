@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import nox
 import os
+
+import nox
 
 
 def generate_params1():
@@ -39,8 +40,8 @@ def new_driver_with_old_servers(session, db_version, query_result_format):
         session.install(d + p)
     with session.chdir(".."):
         env = {
-            "DATABEND_QUERY_VERSION": query_version,
-            "DATABEND_META_VERSION": query_version,
+            "LAKESQL_QUERY_VERSION": query_version,
+            "LAKESQL_META_VERSION": query_version,
             "DB_VERSION": db_version,
             "QUERY_RESULT_FORMAT": query_result_format,
         }

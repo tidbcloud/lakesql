@@ -18,7 +18,7 @@ jobs:
       version_changed: ${{ steps.check.outputs.version_changed }}
       new_version: ${{ steps.check.outputs.new_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
@@ -119,7 +119,7 @@ jobs:
             build_tool: cross
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -145,7 +145,7 @@ jobs:
           target: ${{ matrix.target }}
           version: ${{ needs.check.outputs.new_version }}
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}
           path: dist/${{ steps.package.outputs.file }}
@@ -171,7 +171,7 @@ jobs:
           #   target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -188,7 +188,7 @@ jobs:
           target: ${{ matrix.target }}
           version: ${{ needs.check.outputs.new_version }}
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}
           path: dist/${{ steps.package.outputs.file }}
@@ -243,7 +243,7 @@ jobs:
             runner: macos-15
             wheel: cp38
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Get opts
         id: opts
         shell: bash
@@ -265,7 +265,7 @@ jobs:
           target: ${{ matrix.target }}
       - name: Setup Python 3.8 (cp38 wheels)
         if: matrix.wheel == 'cp38' && matrix.os != 'linux'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.8"
       - name: Build wheels
@@ -277,7 +277,7 @@ jobs:
           sccache: "true"
           args: ${{ steps.opts.outputs.BUILD_ARGS }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-python-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.wheel }}
           path: bindings/python/dist/*.whl
@@ -289,9 +289,9 @@ jobs:
     name: build python sdist
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install maturin
@@ -299,7 +299,7 @@ jobs:
       - name: Build sdist
         run: maturin sdist --manifest-path bindings/python/Cargo.toml --out bindings/python/dist
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-python-sdist
           path: bindings/python/dist/*.tar.gz
@@ -326,14 +326,14 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           cache-key: release-bindings-nodejs-${{ matrix.target }}
           target: ${{ matrix.target }}
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
       - name: Install ziglang
@@ -359,9 +359,9 @@ jobs:
       - name: Strip for macOS
         if: endsWith(matrix.target, '-apple-darwin')
         working-directory: bindings/nodejs
-        run: strip -x *.node
+        run: strip -x ./*.node
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-nodejs-${{ matrix.target }}
           path: bindings/nodejs/*.node
@@ -395,14 +395,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::997599125997:role/github-actions-lakesql-s3
           aws-region: us-west-2
       - name: Download Binary Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           pattern: binary-*
@@ -459,15 +459,15 @@ jobs:
     needs:
       - check
       - release_gate
-    # if: needs.check.outputs.version_changed == 'true'
-    if: >
-      'false' == 'true'
+    if: vars.ENABLE_PUBLISH_CRATES == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
+    # TODO: crates.io does not support OIDC trusted publishing yet.
+    # Switch to OIDC once available: https://github.com/rust-lang/crates.io/issues/10520
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
@@ -547,7 +547,7 @@ jobs:
       id-token: write
     steps:
       - name: Download Python artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bindings-python-*
           path: bindings/python/dist
@@ -568,21 +568,18 @@ jobs:
     needs:
       - check
       - release_gate
-    # if: needs.check.outputs.version_changed == 'true'
-    if: >
-      'false' == 'true'
+    if: vars.ENABLE_PUBLISH_NPM == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-npm
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
       - name: Corepack
         working-directory: bindings/nodejs
         run: npm i -g --force corepack && corepack enable
@@ -593,18 +590,17 @@ jobs:
         working-directory: bindings/nodejs
         run: pnpm napi create-npm-dirs
       - name: Download Node.js artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bindings-nodejs-*
           path: bindings/nodejs/artifacts
       - name: Move artifacts into npm packages
         working-directory: bindings/nodejs
         run: pnpm napi artifacts
-      - name: Publish to npm
+      - name: Publish to npm with private access mode
         working-directory: bindings/nodejs
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.check.outputs.new_version }}
         run: |
           set -euo pipefail
@@ -615,7 +611,7 @@ jobs:
             exit 0
           fi
           if [[ "$version" == *-* ]]; then
-            npm publish --tag next --access public
+            npm publish --access public --tag next
           else
             npm publish --access public
           fi

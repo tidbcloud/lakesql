@@ -8,13 +8,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           cache-key: bindings-python-check
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -77,7 +77,7 @@ jobs:
             runner: macos-latest
             wheel: cp38
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Get opts
         id: opts
         shell: bash
@@ -92,11 +92,11 @@ jobs:
           else
             wheel_args="--no-default-features --features cp38 --interpreter python3.8"
           fi
-          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> $GITHUB_OUTPUT
+          echo "BUILD_ARGS=${base_args} ${wheel_args}" >> "$GITHUB_OUTPUT"
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            echo "MANYLINUX=2_28" >> $GITHUB_OUTPUT
+            echo "MANYLINUX=2_28" >> "$GITHUB_OUTPUT"
           else
-            echo "MANYLINUX=auto" >> $GITHUB_OUTPUT
+            echo "MANYLINUX=auto" >> "$GITHUB_OUTPUT"
           fi
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -105,7 +105,7 @@ jobs:
           target: ${{ matrix.target }}
       - name: Setup Python 3.8 (cp38 wheels)
         if: matrix.wheel == 'cp38' && matrix.os != 'linux'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.8"
       - name: Build wheels
@@ -117,7 +117,7 @@ jobs:
           sccache: "true"
           args: ${{ steps.opts.outputs.BUILD_ARGS }}
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-python-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.wheel }}
           path: bindings/python/dist/*.whl
@@ -126,24 +126,32 @@ jobs:
     name: integration-${{ matrix.pyver }}-${{matrix.body}}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
         pyver: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
         body: ["arrow", "json"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.pyver }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
         env:
-          DATABEND_QUERY_VERSION: v1.2.881-nightly
-          DATABEND_META_VERSION: v1.2.881-nightly
+          LAKESQL_QUERY_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
+          LAKESQL_META_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
         run: make up
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bindings-python-linux-x86_64-*
           path: bindings/python/artifacts
@@ -177,18 +185,25 @@ jobs:
     name: Compat Test
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-
-      - uses: wntrblm/nox@2025.05.01
+      - uses: wntrblm/nox@2026.04.10
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: bindings-python-linux-x86_64-py39-abi
           path: bindings/python/dist
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Run Nox
         run: nox -f tests/nox/noxfile.py

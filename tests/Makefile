@@ -1,5 +1,5 @@
-DATABEND_META_VERSION ?= nightly
-DATABEND_QUERY_VERSION ?= nightly
+LAKESQL_META_VERSION ?= nightly
+LAKESQL_QUERY_VERSION ?= nightly
 
 default: run
 

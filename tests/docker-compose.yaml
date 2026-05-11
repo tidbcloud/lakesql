@@ -7,7 +7,7 @@ services:
     volumes:
       - ./data:/data
   meta:
-    image: docker.io/datafuselabs/databend-meta:${DATABEND_META_VERSION:-nightly}
+    image: ghcr.io/tidbcloud/lakesql/meta:${LAKESQL_META_VERSION:-nightly}
     volumes:
       - ./config/databend-meta-node-1.toml:/conf.toml:ro
     command: -c /conf.toml
@@ -20,12 +20,12 @@ services:
       start_period: 2s
       timeout: 1s
   query:
-    image: docker.io/datafuselabs/databend-query:${DATABEND_QUERY_VERSION:-nightly}
+    image: ghcr.io/tidbcloud/lakesql/query:${LAKESQL_QUERY_VERSION:-nightly}
     volumes:
       - ./config/databend-query-node-1.toml:/conf.toml:ro
     command: -c /conf.toml
     environment:
-      - QUERY_DATABEND_ENTERPRISE_LICENSE
+      - QUERY_LAKESQL_ENTERPRISE_LICENSE
     ports:
       - "8900-8902:8900" # flight sql handler
       # - "8001-8003:8000" # http handler
