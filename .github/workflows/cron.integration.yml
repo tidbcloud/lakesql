@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ver: ["18", "20", "22"]
+        ver: ["22", "24"]
     steps:
       - uses: actions/checkout@v6
       - name: Setup node
