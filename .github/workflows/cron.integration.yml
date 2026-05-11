@@ -14,6 +14,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  LAKESQL_QUERY_VERSION: v1.2.908-nightly
+  LAKESQL_META_VERSION: v1.2.908-nightly
+
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -39,11 +43,11 @@ jobs:
         with:
           cache-key: integration
       - name: Run Core Integration Tests
-        run: make -C tests test-core LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-core LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
       - name: Run Driver Integration Tests
-        run: make -C tests test-driver LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-driver LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
       - name: Run LakeSQL Integration Tests
-        run: make -C tests test-lakesql LAKESQL_QUERY_VERSION=${{ needs.version.outputs.version }}
+        run: make -C tests test-lakesql LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}
 
   build-python:
     name: build-python-${{ matrix.wheel }}
