@@ -464,6 +464,8 @@ jobs:
       'false' == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
+    # TODO: crates.io does not support OIDC trusted publishing yet.
+    # Switch to OIDC once available: https://github.com/rust-lang/crates.io/issues/10520
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
@@ -582,7 +584,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
       - name: Corepack
         working-directory: bindings/nodejs
         run: npm i -g --force corepack && corepack enable
@@ -600,11 +601,10 @@ jobs:
       - name: Move artifacts into npm packages
         working-directory: bindings/nodejs
         run: pnpm napi artifacts
-      - name: Publish to npm
+      - name: Publish to npm with private access mode
         working-directory: bindings/nodejs
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.check.outputs.new_version }}
         run: |
           set -euo pipefail
@@ -615,7 +615,7 @@ jobs:
             exit 0
           fi
           if [[ "$version" == *-* ]]; then
-            npm publish --tag next --access public
+            npm publish --tag next --access private
           else
-            npm publish --access public
+            npm publish --access private
           fi
