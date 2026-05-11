@@ -126,6 +126,9 @@ jobs:
     name: integration-${{ matrix.pyver }}-${{matrix.body}}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
         pyver: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
@@ -136,6 +139,11 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.pyver }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
         env:

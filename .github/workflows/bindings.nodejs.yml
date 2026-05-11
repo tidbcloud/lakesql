@@ -92,6 +92,9 @@ jobs:
     name: integration-${{ matrix.ver }}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
         ver: ["22", "24"]
@@ -112,4 +115,9 @@ jobs:
         with:
           name: bindings-nodejs-x86_64-unknown-linux-gnu
           path: bindings/nodejs
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - run: make -C tests test-bindings-nodejs
