@@ -221,4 +221,3 @@ jobs:
           LARK_MESSAGE_TITLE: "⚠️ LakeSQL Integration Tests Failed"
           LARK_MESSAGE_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           LARK_MESSAGE_TEMPLATE: "red"
-          LARK_MESSAGE_SUBTITLE: "Repo: ${{ github.server_url }}/${{ github.repository }}"
