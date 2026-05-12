@@ -459,13 +459,12 @@ jobs:
     needs:
       - check
       - release_gate
-    if: vars.ENABLE_PUBLISH_CRATES == 'true' && needs.check.outputs.version_changed == 'true'
+    if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
-    # TODO: crates.io does not support OIDC trusted publishing yet.
-    # Switch to OIDC once available: https://github.com/rust-lang/crates.io/issues/10520
-    env:
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - name: Setup Rust toolchain
@@ -509,7 +508,7 @@ jobs:
               return 0
             fi
 
-            until cargo publish -p "$crate" --locked; do
+            until cargo publish -p "$crate" --token-provider=github-oidc --locked; do
               if crate_exists "$crate" "$version"; then
                 echo "${crate} ${version} became available, skipping retry"
                 return 0
