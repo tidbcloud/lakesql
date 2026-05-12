@@ -471,20 +471,6 @@ jobs:
         uses: ./.github/actions/setup
         with:
           cache-key: release-crates
-      - name: Package crates
-        shell: bash
-        run: |
-          set -euo pipefail
-          crates=(
-            lake-driver-macros
-            lake-client
-            lake-driver-core
-            lake-driver
-            lakesql
-          )
-          for crate in "${crates[@]}"; do
-            cargo package --locked -p "${crate}"
-          done
       - name: Publish crates.io packages
         shell: bash
         env:
