@@ -471,10 +471,13 @@ jobs:
         uses: ./.github/actions/setup
         with:
           cache-key: release-crates
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
       - name: Publish crates.io packages
         shell: bash
         env:
           VERSION: ${{ needs.check.outputs.new_version }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -494,7 +497,7 @@ jobs:
               return 0
             fi
 
-            until cargo publish -p "$crate" --token-provider=github-oidc --locked; do
+            until cargo publish -p "$crate" --locked; do
               if crate_exists "$crate" "$version"; then
                 echo "${crate} ${version} became available, skipping retry"
                 return 0
@@ -565,15 +568,13 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22"
+          registry-url: "https://registry.npmjs.org"
       - name: Corepack
         working-directory: bindings/nodejs
         run: npm i -g --force corepack && corepack enable
       - name: Install dependencies
         working-directory: bindings/nodejs
         run: pnpm install
-      - name: Create npm dirs
-        working-directory: bindings/nodejs
-        run: pnpm napi create-npm-dir
       - name: Download Node.js artifacts
         uses: actions/download-artifact@v8
         with:

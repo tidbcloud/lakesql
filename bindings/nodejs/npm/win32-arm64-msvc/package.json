@@ -1,7 +1,7 @@
 {
   "name": "@tidbcloudlake-driver/lib-win32-arm64-msvc",
   "repository": "https://github.com/tidbcloud/lakesql.git",
-  "version": "0.1.2-alpha.1",
+  "version": "0.1.2-alpha.2",
   "os": [
     "win32"
   ],
