@@ -573,7 +573,7 @@ jobs:
         run: pnpm install
       - name: Create npm dirs
         working-directory: bindings/nodejs
-        run: pnpm napi create-npm-dirs
+        run: pnpm napi create-npm-dir
       - name: Download Node.js artifacts
         uses: actions/download-artifact@v8
         with:
