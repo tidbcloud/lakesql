@@ -1,7 +1,7 @@
 {
   "name": "@tidbcloudlake-driver/lib-darwin-x64",
   "repository": "https://github.com/tidbcloud/lakesql.git",
-  "version": "0.1.2-test",
+  "version": "0.1.2-alpha.1",
   "os": [
     "darwin"
   ],
