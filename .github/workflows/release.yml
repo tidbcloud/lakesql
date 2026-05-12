@@ -471,20 +471,6 @@ jobs:
         uses: ./.github/actions/setup
         with:
           cache-key: release-crates
-      - name: Package crates
-        shell: bash
-        run: |
-          set -euo pipefail
-          crates=(
-            lake-driver-macros
-            lake-client
-            lake-driver-core
-            lake-driver
-            lakesql
-          )
-          for crate in "${crates[@]}"; do
-            cargo package --locked -p "${crate}"
-          done
       - name: Publish crates.io packages
         shell: bash
         env:
@@ -587,7 +573,7 @@ jobs:
         run: pnpm install
       - name: Create npm dirs
         working-directory: bindings/nodejs
-        run: pnpm napi create-npm-dirs
+        run: pnpm napi create-npm-dir
       - name: Download Node.js artifacts
         uses: actions/download-artifact@v8
         with:
@@ -614,3 +600,43 @@ jobs:
           else
             npm publish --access public
           fi
+
+  notify:
+    if: always()
+    needs:
+      - check
+      - publish_s3
+      - publish_crates
+      - publish_pypi
+      - publish_npm
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check publish results
+        id: check_results
+        run: |
+          if [[ "${{ needs.publish_s3.result }}" == "failure" || \
+                "${{ needs.publish_crates.result }}" == "failure" || \
+                "${{ needs.publish_pypi.result }}" == "failure" || \
+                "${{ needs.publish_npm.result }}" == "failure" ]]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Publish Success
+        if: steps.check_results.outputs.status == 'success'
+        uses: drayeasy/action-lark-notify@main
+        env:
+          LARK_WEBHOOK: ${{ secrets.DEV_TEAM_WEBHOOK_URL }}
+          LARK_MESSAGE_TITLE: "✅ LakeSQL Publish Succeeded (${{ needs.check.outputs.new_version }})"
+          LARK_MESSAGE_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          LARK_MESSAGE_TEMPLATE: "green"
+
+      - name: Notify Publish Failure
+        if: steps.check_results.outputs.status == 'failure'
+        uses: drayeasy/action-lark-notify@v0.1.4
+        env:
+          LARK_WEBHOOK: ${{ secrets.DEV_TEAM_WEBHOOK_URL }}
+          LARK_MESSAGE_TITLE: "❌ LakeSQL Publish Failed (${{ needs.check.outputs.new_version }})"
+          LARK_MESSAGE_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          LARK_MESSAGE_TEMPLATE: "red"
