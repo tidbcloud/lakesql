@@ -14,7 +14,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.1.1-test"
+version = "0.1.2-test"
 license = "Apache-2.0"
 authors = ["TiDB Cloud Authors <engineering@tidbcloud.com>"]
 categories = ["database"]
@@ -22,10 +22,10 @@ keywords = ["lake", "tidbcloud", "database", "rust"]
 repository = "https://github.com/tidbcloud/lakesql"
 
 [workspace.dependencies]
-lake-client = { path = "core", version = "0.1.1-test" }
-lake-driver = { path = "driver", version = "0.1.1-test" }
-lake-driver-core = { path = "sql", version = "0.1.1-test" }
-lake-driver-macros = { path = "macros", version = "0.1.1-test" }
+lake-client = { path = "core", version = "0.1.2-test" }
+lake-driver = { path = "driver", version = "0.1.2-test" }
+lake-driver-core = { path = "sql", version = "0.1.2-test" }
+lake-driver-macros = { path = "macros", version = "0.1.2-test" }
 
 jsonb = { version = "0.5.6" }
 tokio-stream = "0.1"
