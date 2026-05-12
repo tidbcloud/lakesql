@@ -215,7 +215,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Notify Dev Team
-        uses: drayeasy/action-lark-notify@main
+        uses: drayeasy/action-lark-notify@v0.1.4
         env:
           LARK_WEBHOOK: ${{ secrets.DEV_TEAM_WEBHOOK_URL }}
           LARK_MESSAGE_TITLE: "⚠️ LakeSQL Integration Tests Failed"
