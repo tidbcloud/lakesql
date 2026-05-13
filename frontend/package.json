@@ -1,6 +1,6 @@
 {
   "name": "lakesql-frontend",
-  "version": "0.1.2-alpha.3",
+  "version": "0.1.2-alpha.4",
   "description": "LakeSQL - TiDB Cloud Lake Web UI",
   "dependencies": {
     "@ant-design/charts": "v1",

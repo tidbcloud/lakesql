@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
@@ -389,7 +393,7 @@ jobs:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    if: vars.ENABLE_PUBLISH_S3 == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-s3
     steps:
@@ -457,7 +461,7 @@ jobs:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    if: vars.ENABLE_PUBLISH_CRATES == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-crates
     steps:
@@ -522,7 +526,7 @@ jobs:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    if: vars.ENABLE_PUBLISH_PYPI == 'true' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: testpypi # pypi
     steps:
@@ -548,7 +552,7 @@ jobs:
     needs:
       - check
       - release_gate
-    if: needs.check.outputs.version_changed == 'true'
+    if: github.repository_visibility == 'public' && needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment: release-npm
 
@@ -557,8 +561,9 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false # never use caching in release builds
       - name: Corepack
         working-directory: bindings/nodejs
         run: npm i -g --force corepack && corepack enable
@@ -570,6 +575,7 @@ jobs:
         with:
           pattern: bindings-nodejs-*
           path: bindings/nodejs/artifacts
+          merge-multiple: true
       - name: Move artifacts into npm packages
         working-directory: bindings/nodejs
         run: pnpm napi artifacts
@@ -596,12 +602,13 @@ jobs:
     if: always()
     needs:
       - check
-      - publish_s3
-      - publish_crates
-      - publish_pypi
+      # - publish_s3
+      # - publish_crates
+      # - publish_pypi
       - publish_npm
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
       - name: Check publish results
         id: check_results
         run: |
