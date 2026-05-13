@@ -526,14 +526,14 @@ jobs:
             publish_crate "$crate" "$version"
           done
 
-  publish_pypi:
+  publish_testpypi:
     needs:
       - check
       - release_gate
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment:
-      name: testpypi # pypi
+      name: testpypi
       url: https://test.pypi.org/project/tidbcloudlake-driver/
     steps:
       - name: Download Python artifacts
@@ -549,10 +549,27 @@ jobs:
           packages-dir: bindings/python/dist
           skip-existing: true
 
-      # - name: Publish to PyPi
-      #   uses: pypa/gh-action-pypi-publish@release/v1
-      #   with:
-      #     packages-dir: bindings/python/dist
+  publish_pypi:
+    needs:
+      - check
+      - release_gate
+    if: github.repository_visibility == 'public' && needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tidbcloudlake-driver/
+    steps:
+      - name: Download Python artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bindings-python-*
+          path: bindings/python/dist
+          merge-multiple: true
+      - name: Publish to PyPi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: bindings/python/dist
+          skip-existing: true
 
   publish_npm:
     needs:
@@ -612,6 +629,7 @@ jobs:
       - check
       - publish_s3
       - publish_crates
+      - publish_testpypi
       - publish_pypi
       - publish_npm
     runs-on: ubuntu-24.04
