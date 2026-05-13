@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
@@ -557,7 +561,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - name: Corepack
         working-directory: bindings/nodejs
@@ -602,6 +606,7 @@ jobs:
       - publish_npm
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
       - name: Check publish results
         id: check_results
         run: |
