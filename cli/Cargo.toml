@@ -62,6 +62,12 @@ uuid = { version = "1.16", features = ["std", "v4", "v7"] }
 [build-dependencies]
 vergen-gix = { version = "9.1.0", features = ["build"] }
 
+[package.metadata.binstall]
+pkg-url = "https://lakesql-bin.tidbcloud.com/lakesql/v{version}/lakesql-{target}.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
+disabled-strategies = ["quick-install"]
+
 [[bin]]
 name = "lakesql"
 path = "src/main.rs"

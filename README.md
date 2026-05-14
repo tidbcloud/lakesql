@@ -55,8 +55,9 @@ Supported targets in the binary release flow:
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 
-Additional package registries:
+Additional install options:
 
+- Rust CLI prebuilt install via cargo-binstall: `cargo binstall lakesql`
 - Rust CLI source install: `cargo install lakesql`
 - Python bindings: `pip install tidbcloudlake-driver`
 - Node.js bindings: `npm install tidbcloudlake-driver`
