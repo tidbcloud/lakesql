@@ -553,7 +553,8 @@ jobs:
     needs:
       - check
       - release_gate
-    if: github.repository_visibility == 'public' && needs.check.outputs.version_changed == 'true'
+    # if: github.repository_visibility == 'public' && needs.check.outputs.version_changed == 'true'
+    if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment:
       name: pypi
@@ -624,9 +625,10 @@ jobs:
           fi
 
   notify:
-    if: always()
+    if: always() && needs.release_gate.result != 'skipped'
     needs:
       - check
+      - release_gate
       - publish_s3
       - publish_crates
       - publish_testpypi
