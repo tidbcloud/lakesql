@@ -237,9 +237,8 @@ make check
 
 ### Development mode
 
-- For fast development: Run `cd frontend && pnpm run dev` in one terminal, then `make dev-run` in another
-- For production builds: Use `make build-frontend` to create embedded assets
-- Development mode uses `LAKESQL_DEV_MODE=1` environment variable to proxy requests to Next.js dev server
+- Run the CLI directly with `make run`
+- Build release binaries with `make build`
 
 ### Unit tests
 

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::io::BufRead;
-use std::net::TcpListener;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,7 +25,6 @@ use crate::display::INTERRUPTED_MESSAGE;
 use crate::display::{format_write_progress, ChunkDisplay, FormatDisplay};
 use crate::helper::CliHelper;
 use crate::sql_parser::SqlParser;
-use crate::web::{set_dsn, start_server};
 use crate::VERSION;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -44,7 +42,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use tokio::fs::{remove_file, File};
 use tokio::io::AsyncWriteExt;
-use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_stream::StreamExt;
 
@@ -67,8 +64,6 @@ pub struct Session {
     settings: Settings,
     query: String,
     sql_parser: SqlParser,
-
-    server_handle: Option<JoinHandle<std::io::Result<()>>>,
 
     keywords: Option<Arc<sled::Db>>,
     interrupted: Arc<AtomicBool>,
@@ -163,22 +158,6 @@ impl Session {
             keywords = Some(Arc::new(db));
         }
 
-        let mut server_handle = None;
-        if is_repl && settings.enable_ui {
-            let listener =
-                TcpListener::bind(format!("{}:{}", settings.bind_address, settings.bind_port))
-                    .unwrap();
-            let addr = listener.local_addr().unwrap();
-
-            // Share the DSN with the web server
-            set_dsn(dsn.clone());
-
-            let handle = tokio::spawn(async move { start_server(listener).await });
-            println!("Started web server at {addr}");
-            println!("Web UI is enabled. This allows SQL execution from any browser that can access this port.");
-            server_handle = Some(handle);
-        };
-
         let interrupted = Arc::new(AtomicBool::new(false));
         let interrupted_clone = interrupted.clone();
 
@@ -203,7 +182,6 @@ impl Session {
             query: String::new(),
             sql_parser,
             keywords,
-            server_handle,
             interrupted,
         })
     }
@@ -723,12 +701,4 @@ fn get_history_path() -> String {
         "{}/.lakesql_history",
         std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
     )
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        if let Some(handle) = self.server_handle.take() {
-            handle.abort();
-        }
-    }
 }

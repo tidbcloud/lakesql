@@ -33,9 +33,7 @@ Options:
       --dsn <DSN>                  Data source name [env: LAKESQL_DSN]
   -n, --non-interactive            Force non-interactive mode
   -A, --no-auto-complete           Disable loading tables and fields for auto-completion, which offers a quicker start
-      --check                      Check for server status and exit
-      --ui                         Enable web UI interface (⚠️  SECURITY RISK: Allows SQL execution from any browser that can access this port)
-      --bind-port <BIND_PORT>      Web UI port, Default: 8084, ignored when --ui is not set
+  --check                      Check for server status and exit
       --query=<QUERY>              Query to execute
   -d, --data <DATA>                Data to load, @file or @- for stdin
       --load-method <LOAD_METHOD>  method to load data to table [default: stage] [possible values: stage, streaming]
@@ -90,16 +88,6 @@ show tables like 'd%'
 
 lakesql> exit
 Bye~
-```
-
-### UI Interface
-
-With `--ui` option, LakeSQL will start a web server and open a browser to show the UI interface.
-We can execute sql or analyze query performance with LakeSQL in the browser.
-Also we can share the results with others by copying the url.
-
-```bash
-❯ lakesql  -h localhost --port 8000 --ui
 ```
 
 ### StdIn Pipe
