@@ -30,64 +30,6 @@ impl SqlParser {
         }
     }
 
-    /// Parse SQL text and return a vector of individual SQL statements
-    pub fn parse(&self, sql_text: &str) -> Vec<String> {
-        let mut queries = Vec::new();
-        let mut current_query = String::new();
-
-        for line in sql_text.lines() {
-            let line = line.trim();
-
-            if line.is_empty() {
-                continue;
-            }
-
-            // Handle special commands for REPL mode
-            if current_query.is_empty()
-                && (line.starts_with('!')
-                    || line == "exit"
-                    || line == "quit"
-                    || line.to_uppercase().starts_with("PUT"))
-            {
-                queries.push(line.to_owned());
-                continue;
-            }
-
-            // Handle single line mode
-            if !self.multi_line {
-                if line.starts_with("--") {
-                    continue;
-                } else {
-                    queries.push(line.to_owned());
-                    continue;
-                }
-            }
-
-            // Append line to current query
-            if !current_query.is_empty() {
-                current_query.push('\n');
-            }
-            current_query.push_str(line);
-
-            // Parse the accumulated query to find statement boundaries
-            let parsed = self.parse_statements(&current_query);
-            for statement in parsed.statements {
-                queries.push(statement);
-            }
-            current_query = parsed.remaining;
-        }
-
-        // Add any remaining query
-        if !current_query.is_empty() {
-            let trimmed = current_query.trim();
-            if !trimmed.is_empty() && trimmed != self.delimiter.to_string() {
-                queries.push(trimmed.to_string());
-            }
-        }
-
-        queries
-    }
-
     /// Parse a single line incrementally, maintaining state
     /// Returns complete statements and updates the provided buffer
     pub fn parse_line(
@@ -303,10 +245,4 @@ struct ParseResult {
     statements: Vec<String>,
     remaining: String,
     err: String,
-}
-
-/// Parse SQL text for web API (non-REPL mode)
-pub fn parse_sql_for_web(sql_text: &str) -> Vec<String> {
-    let parser = SqlParser::new(';', true, false);
-    parser.parse(sql_text)
 }

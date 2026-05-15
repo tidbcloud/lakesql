@@ -16,6 +16,4 @@
 
 [files]
 extend-exclude = [
-  "cli/frontend",
-  "frontend"
 ]

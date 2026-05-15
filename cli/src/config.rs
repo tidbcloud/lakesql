@@ -27,8 +27,6 @@ pub struct Config {
     pub connection: ConnectionConfig,
     #[serde(default)]
     pub settings: SettingsConfig,
-    #[serde(default)]
-    pub server: ServerConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -106,12 +104,6 @@ pub struct Settings {
     /// Whether to quote string values in table output format.
     pub quote_string: bool,
     pub sql_delimiter: char,
-
-    pub bind_address: String,
-    pub bind_port: u16,
-    pub auto_open_browser: bool,
-    /// Enable web UI interface (security risk)
-    pub enable_ui: bool,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Deserialize)]
@@ -184,11 +176,6 @@ impl Settings {
         self.max_width = cfg.max_width.unwrap_or(self.max_width);
         self.max_col_width = cfg.max_col_width.unwrap_or(self.max_col_width);
         self.max_display_rows = cfg.max_display_rows.unwrap_or(self.max_display_rows);
-        self.auto_open_browser = c.server.auto_open_browser;
-        self.bind_address.clone_from(&c.server.bind_address);
-        if self.bind_port == 0 {
-            self.bind_port = c.server.bind_port;
-        }
     }
 
     pub fn inject_ctrl_cmd(&mut self, cmd_name: &str, cmd_value: &str) -> Result<()> {
@@ -247,14 +234,6 @@ pub struct ConnectionConfig {
     pub args: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
-pub struct ServerConfig {
-    pub bind_address: String,
-    pub bind_port: u16,
-    pub auto_open_browser: bool,
-}
-
 impl Config {
     pub fn load() -> Self {
         let paths = [
@@ -306,10 +285,6 @@ impl Default for Settings {
             time: None,
             multi_line: true,
             quote_string: false,
-            auto_open_browser: false,
-            bind_address: "127.0.0.1".to_string(),
-            bind_port: 0,
-            enable_ui: false,
         }
     }
 }
@@ -323,16 +298,6 @@ impl Default for ConnectionConfig {
             database: None,
             tls: None,
             args: BTreeMap::new(),
-        }
-    }
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            bind_address: "127.0.0.1".to_string(),
-            bind_port: 0,
-            auto_open_browser: true,
         }
     }
 }
