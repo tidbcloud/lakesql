@@ -393,6 +393,7 @@ jobs:
     needs:
       - check
       - release_gate
+      - verify_linux_packages
     if: needs.check.outputs.version_changed == 'true'
     runs-on: ubuntu-24.04
     environment:
@@ -411,6 +412,11 @@ jobs:
           path: dist
           pattern: binary-*
           merge-multiple: true
+      - name: Download Linux package repositories
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-package-repos
+          path: dist/linux-packages
       - name: Prepare Release Metadata
         env:
           VERSION: ${{ needs.check.outputs.new_version }}
@@ -452,12 +458,100 @@ jobs:
             s3://lakesql-binaries/lakesql/latest.json \
             --no-progress \
             --checksum-algorithm=CRC32
+
+          aws s3 sync \
+            dist/linux-packages/keys \
+            s3://lakesql-binaries/keys \
+            --delete \
+            --no-progress
+
+          aws s3 sync \
+            dist/linux-packages/apt \
+            s3://lakesql-binaries/apt \
+            --delete \
+            --no-progress
+
+          aws s3 sync \
+            dist/linux-packages/rpm \
+            s3://lakesql-binaries/rpm \
+            --delete \
+            --no-progress
+
+          aws s3 sync \
+            dist/linux-packages/apk \
+            s3://lakesql-binaries/apk \
+            --delete \
+            --no-progress
       - name: Invalidate CloudFront cache for mutable objects
         shell: bash
         run: |
           aws cloudfront create-invalidation \
             --distribution-id E3R5GDE9Y8EDPY \
-            --paths /install/lakesql.sh /lakesql/latest.json
+            --paths \
+              /install/lakesql.sh \
+              /lakesql/latest.json \
+              /keys/* \
+              /apt/dists/stable/* \
+              /rpm/stable/*/repodata/* \
+              /apk/stable/*/APKINDEX*
+
+  build_linux_packages:
+    needs:
+      - check
+      - release_gate
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-s3
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install packaging toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev apt-utils createrepo-c rpm gnupg
+          curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.43.4/nfpm_2.43.4_Linux_x86_64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin nfpm
+      - name: Download Linux binary artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: binary-*-unknown-linux-musl
+          merge-multiple: true
+      - name: Build Linux packages and repositories
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+          GPG_PRIVATE_KEY_B64: ${{ secrets.LAKESQL_PACKAGE_GPG_PRIVATE_KEY_B64 }}
+          GPG_PASSPHRASE: ${{ secrets.LAKESQL_PACKAGE_GPG_PASSPHRASE }}
+          APK_PRIVATE_KEY_B64: ${{ secrets.LAKESQL_PACKAGE_APK_PRIVATE_KEY_B64 }}
+          APK_PUBLIC_KEY_B64: ${{ secrets.LAKESQL_PACKAGE_APK_PUBLIC_KEY_B64 }}
+          NFPM_APK_PASSPHRASE: ${{ secrets.LAKESQL_PACKAGE_APK_PASSPHRASE }}
+        run: ./scripts/build_linux_packages.sh
+      - name: Upload Linux package repositories
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-package-repos
+          path: dist/linux-packages
+          if-no-files-found: error
+
+  verify_linux_packages:
+    needs:
+      - check
+      - build_linux_packages
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download Linux package repositories
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-package-repos
+          path: dist/linux-packages
+      - name: Verify apt, dnf, and apk install flows
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: ./scripts/verify_linux_packages.sh
 
   publish_crates:
     needs:
@@ -678,6 +772,8 @@ jobs:
       - check
       - release_gate
       - publish_s3
+      - build_linux_packages
+      - verify_linux_packages
       - publish_crates
       - verify_binstall
       - publish_testpypi
@@ -690,6 +786,8 @@ jobs:
         id: check_results
         run: |
           if [[ "${{ needs.publish_s3.result }}" == "failure" || \
+                "${{ needs.build_linux_packages.result }}" == "failure" || \
+                "${{ needs.verify_linux_packages.result }}" == "failure" || \
                 "${{ needs.publish_crates.result }}" == "failure" || \
                 "${{ needs.verify_binstall.result }}" == "failure" || \
                 "${{ needs.publish_pypi.result }}" == "failure" || \

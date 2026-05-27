@@ -1,15 +1,35 @@
 name: "lakesql"
-arch: ""
+arch: "${NFPM_ARCH}"
 platform: "linux"
-version: ""
+version: "${NFPM_VERSION}"
 section: "database"
 priority: "extra"
 maintainer: "TiDB Cloud Authors <engineering@tidbcloud.com>"
 description: |
   LakeSQL is a native command line tool for TiDB Cloud Lake.
-vendor: "Datafuse Labs"
+vendor: "PingCAP"
 homepage: "https://github.com/tidbcloud/lakesql"
 license: "Apache-2.0"
+rpm:
+  arch: "${NFPM_RPM_ARCH}"
+  signature:
+    key_file: "${NFPM_GPG_KEY_FILE}"
+    passphrase: "${NFPM_GPG_PASSPHRASE}"
+deb:
+  arch: "${NFPM_DEB_ARCH}"
+  signature:
+    key_file: "${NFPM_GPG_KEY_FILE}"
+    passphrase: "${NFPM_GPG_PASSPHRASE}"
+    method: dpkg-sig
+    type: origin
+apk:
+  arch: "${NFPM_APK_ARCH}"
+  signature:
+    key_file: "${NFPM_APK_KEY_FILE}"
+    key_name: "${NFPM_APK_KEY_NAME}"
+    passphrase: "${NFPM_APK_PASSPHRASE}"
 contents:
-- src: dist/lakesql
+- src: "${NFPM_SOURCE_BINARY}"
   dst: /usr/bin/lakesql
+  file_info:
+    mode: 0755
