@@ -20,7 +20,7 @@ TiDB Cloud Lake Native Client in Rust
 
 ## Installation for LakeSQL
 
-### Installation script
+### Recommended: installation script
 
 ```bash
 curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash
@@ -32,7 +32,21 @@ or
 curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash -s -- -y --prefix /usr/local
 ```
 
-### Manually:
+### Alternative: install via cargo-binstall
+
+If you already use Rust tooling and have `cargo-binstall` available, you can install the prebuilt `lakesql` binary from the published release artifacts:
+
+```bash
+cargo binstall lakesql
+```
+
+If `cargo-binstall` is not installed yet, install it first:
+
+```bash
+cargo install cargo-binstall
+```
+
+### Manual binary download
 
 1. Resolve the latest version:
 
@@ -55,9 +69,8 @@ Supported targets in the binary release flow:
 - `x86_64-unknown-linux-musl`
 - `aarch64-unknown-linux-musl`
 
-Additional install options:
+### Other install options
 
-- Rust CLI prebuilt install via cargo-binstall: `cargo binstall lakesql`
 - Rust CLI source install: `cargo install lakesql`
 - Python bindings: `pip install tidbcloudlake-driver`
 - Node.js bindings: `npm install tidbcloudlake-driver`
