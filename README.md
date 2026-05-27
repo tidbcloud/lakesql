@@ -46,6 +46,47 @@ If `cargo-binstall` is not installed yet, install it first:
 cargo install cargo-binstall
 ```
 
+### Linux package repositories
+
+Use the install script above if you want the least setup. Native package feeds are also published for `apt`, `dnf`/`yum`, and `apk`.
+
+#### Debian / Ubuntu
+
+```bash
+curl -fsSL https://lakesql-bin.tidbcloud.com/keys/lakesql-archive-keyring.gpg \
+  | sudo tee /usr/share/keyrings/lakesql-archive-keyring.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/lakesql-archive-keyring.gpg] https://lakesql-bin.tidbcloud.com/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/lakesql.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y lakesql
+```
+
+#### Fedora / RHEL
+
+```bash
+sudo tee /etc/yum.repos.d/lakesql.repo >/dev/null <<'EOF'
+[lakesql]
+name=LakeSQL
+baseurl=https://lakesql-bin.tidbcloud.com/rpm/stable/$basearch
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://lakesql-bin.tidbcloud.com/keys/RPM-GPG-KEY-lakesql
+EOF
+sudo dnf install -y lakesql
+```
+
+#### Alpine
+
+```bash
+curl -fsSL https://lakesql-bin.tidbcloud.com/keys/lakesql-packages.rsa.pub \
+  | sudo tee /etc/apk/keys/lakesql-packages.rsa.pub >/dev/null
+echo "https://lakesql-bin.tidbcloud.com/apk/stable/$(apk --print-arch)" \
+  | sudo tee -a /etc/apk/repositories >/dev/null
+sudo apk update
+sudo apk add lakesql
+```
+
 ### Manual binary download
 
 1. Resolve the latest version:
@@ -74,8 +115,6 @@ Supported targets in the binary release flow:
 - Rust CLI source install: `cargo install lakesql`
 - Python bindings: `pip install tidbcloudlake-driver`
 - Node.js bindings: `npm install tidbcloudlake-driver`
-
-Homebrew and OS package feeds remain out of scope for the current release workflow.
 
 ## Usage
 
