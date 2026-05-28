@@ -77,24 +77,22 @@ build_target() {
   tar -xzf "${archive}" -C "${unpack_dir}"
 
   export NFPM_VERSION="${SEMVER_VERSION}"
-  export NFPM_ARCH="${rpm_arch}"
-  export NFPM_RPM_ARCH="${rpm_arch}"
-  export NFPM_DEB_ARCH="${deb_arch}"
-  export NFPM_APK_ARCH="${apk_arch}"
   export NFPM_SOURCE_BINARY="${binary_path}"
   export NFPM_GPG_KEY_FILE="${GPG_KEY_FILE}"
   export NFPM_APK_KEY_FILE="${APK_KEY_FILE}"
   export NFPM_APK_KEY_NAME="$(basename "${APK_PUBLIC_KEY_FILE}")"
-  export NFPM_GPG_PASSPHRASE="${GPG_PASSPHRASE}"
+  export NFPM_PASSPHRASE="${GPG_PASSPHRASE}"
+  export NFPM_RPM_PASSPHRASE="${GPG_PASSPHRASE}"
+  export NFPM_DEB_PASSPHRASE="${GPG_PASSPHRASE}"
   export NFPM_APK_PASSPHRASE="${NFPM_APK_PASSPHRASE}"
 
   local deb_pkg="${PACKAGE_ROOT}/lakesql_${SEMVER_VERSION}_${deb_arch}.deb"
   local rpm_pkg="${PACKAGE_ROOT}/lakesql-${SEMVER_VERSION}-1.${rpm_arch}.rpm"
   local apk_pkg="${PACKAGE_ROOT}/lakesql-${SEMVER_VERSION}-r0.${apk_arch}.apk"
 
-  nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager deb --target "${deb_pkg}"
-  nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager rpm --target "${rpm_pkg}"
-  nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager apk --target "${apk_pkg}"
+  NFPM_ARCH="${deb_arch}" nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager deb --target "${deb_pkg}"
+  NFPM_ARCH="${rpm_arch}" nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager rpm --target "${rpm_pkg}"
+  NFPM_ARCH="${apk_arch}" nfpm package --config "${ROOT_DIR}/nfpm.yaml" --packager apk --target "${apk_pkg}"
 }
 
 build_target x86_64-unknown-linux-musl amd64 x86_64 x86_64
@@ -151,7 +149,7 @@ for apk_arch in x86_64 aarch64; do
     -v "${APK_PUBLIC_KEY_FILE}:/keys/lakesql-packages.rsa.pub:ro" \
     alpine:3.22 sh -euxc "
       apk add --no-cache abuild
-      apk index --output /repo/APKINDEX.tar.gz /repo/*.apk
+      apk index --allow-untrusted --output /repo/APKINDEX.tar.gz /repo/*.apk
       abuild-sign -k /keys/lakesql-packages.rsa -p lakesql-packages.rsa.pub /repo/APKINDEX.tar.gz
     "
 done
