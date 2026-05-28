@@ -1,6 +1,6 @@
 # LakeSQL
 
-TiDB Cloud Lake Native Client in Rust
+TiDB Cloud Lake Native Client in Rust 0
 
 ## Components
 
