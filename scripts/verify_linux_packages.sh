@@ -50,7 +50,7 @@ EOF
 alpine_verify() {
   docker run --rm -v "${DIST_DIR}:/repo:ro" alpine:3.22 sh -euxc "
     cp /repo/keys/lakesql-packages.rsa.pub /etc/apk/keys/lakesql-packages.rsa.pub
-    printf '%s\n' 'file:///repo/apk/stable/x86_64' > /etc/apk/repositories
+    printf '%s\n' 'file:///repo/apk/stable' > /etc/apk/repositories
     apk update
     apk add lakesql
     lakesql --version | grep -F '${SEMVER_VERSION}'
