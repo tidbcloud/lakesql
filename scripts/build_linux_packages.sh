@@ -142,7 +142,8 @@ done
 
 for apk_arch in x86_64 aarch64; do
   mkdir -p "${APK_ROOT}/stable/${apk_arch}"
-  cp "${PACKAGE_ROOT}/lakesql-${SEMVER_VERSION}-r0.${apk_arch}.apk" "${APK_ROOT}/stable/${apk_arch}/lakesql-${SEMVER_VERSION}-r0.apk"
+  apk_ver="${SEMVER_VERSION//-/_}"
+  cp "${PACKAGE_ROOT}/lakesql-${SEMVER_VERSION}-r0.${apk_arch}.apk" "${APK_ROOT}/stable/${apk_arch}/lakesql-${apk_ver}.apk"
   docker run --rm \
     -v "${APK_ROOT}/stable/${apk_arch}:/repo" \
     -v "${APK_KEY_FILE}:/keys/lakesql-packages.rsa:ro" \

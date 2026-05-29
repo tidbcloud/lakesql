@@ -547,6 +547,22 @@ jobs:
         with:
           name: linux-package-repos
           path: dist/linux-packages
+      - name: Debug - list repository structure
+        shell: bash
+        run: |
+          echo "=== APT repo ==="
+          find dist/linux-packages/apt -type f | sort
+          echo ""
+          echo "=== RPM repo ==="
+          find dist/linux-packages/rpm -type f | sort
+          echo ""
+          echo "=== APK repo ==="
+          find dist/linux-packages/apk -type f | sort
+          echo ""
+          echo "=== APKINDEX content ==="
+          if [ -f dist/linux-packages/apk/stable/x86_64/APKINDEX.tar.gz ]; then
+            tar -xzf dist/linux-packages/apk/stable/x86_64/APKINDEX.tar.gz -O 2>/dev/null
+          fi
       - name: Verify apt, dnf, and apk install flows
         shell: bash
         env:
