@@ -13,7 +13,7 @@ TiDB Cloud Lake Python Client
 ```python
 from tidbcloudlake_driver import BlockingLakeClient
 
-client = BlockingLakeClient('tidbcloudlake://root:root@localhost:8000/?sslmode=disable')
+client = BlockingLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
 cursor = client.cursor()
 
 cursor.execute(
@@ -42,7 +42,7 @@ cursor.close()
 ```python
 from tidbcloudlake_driver import BlockingLakeClient
 
-client = BlockingLakeClient('tidbcloudlake://root:root@localhost:8000/?sslmode=disable')
+client = BlockingLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
 conn = client.get_conn()
 conn.exec(
     """
@@ -70,7 +70,7 @@ import asyncio
 from tidbcloudlake_driver import AsyncLakeClient
 
 async def main():
-    client = AsyncLakeClient('tidbcloudlake://root:root@localhost:8000/?sslmode=disable')
+    client = AsyncLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
     conn = await client.get_conn()
     await conn.exec(
         """
