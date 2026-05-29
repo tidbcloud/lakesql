@@ -81,7 +81,7 @@ sudo dnf install -y lakesql
 ```bash
 curl -fsSL https://lakesql-bin.tidbcloud.com/keys/lakesql-packages.rsa.pub \
   | sudo tee /etc/apk/keys/lakesql-packages.rsa.pub >/dev/null
-echo "https://lakesql-bin.tidbcloud.com/apk/stable/$(apk --print-arch)" \
+echo "https://lakesql-bin.tidbcloud.com/apk/stable" \
   | sudo tee -a /etc/apk/repositories >/dev/null
 sudo apk update
 sudo apk add lakesql
