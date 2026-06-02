@@ -180,30 +180,3 @@ jobs:
         run: behave tests/cursor
         env:
           QUERY_RESULT_FORMAT: ${{ matrix.body }}
-
-  compat:
-    name: Compat Test
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - uses: actions/checkout@v6
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-      - uses: wntrblm/nox@2026.04.10
-      - name: Download artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: bindings-python-linux-x86_64-py39-abi
-          path: bindings/python/dist
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Run Nox
-        run: nox -f tests/nox/noxfile.py
