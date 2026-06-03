@@ -589,7 +589,7 @@ jobs:
           body="$(printf '%s\n' \
             '## Summary' \
             "- update \`Formula/lakesql.rb\` for ${VERSION}" \
-            '- rendered from the LakeSQL release workflow using the Darwin archive checksums prepared by `publish_s3`' \
+            "- rendered from the LakeSQL release workflow using the Darwin archive checksums prepared by \`publish_s3\`" \
             "- source workflow run: ${RUN_URL}")"
 
           cd homebrew-tap
