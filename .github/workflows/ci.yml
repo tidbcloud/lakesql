@@ -93,9 +93,17 @@ jobs:
       #   run: |
       #     echo "::add-mask::${{ vars.LAKE_LICENSE_TRIAL }}"
       #     echo "QUERY_LAKESQL_ENTERPRISE_LICENSE=${{ vars.LAKE_LICENSE_TRIAL }}" >> $GITHUB_ENV
-      - run: make -C tests test-core
-      - run: make -C tests test-driver
-      - run: make -C tests test-lakesql
+      - name: Resolve Lake version
+        id: lake-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh api repos/tidbcloud/lakesql/releases --jq '[.[] | select(.draft | not) | select(.tag_name | endswith("-nightly"))][0].tag_name')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Running integration tests with Lake version: **$version**" >> "$GITHUB_STEP_SUMMARY"
+      - run: make -C tests test-core LAKESQL_META_VERSION=${{ steps.lake-version.outputs.version }} LAKESQL_QUERY_VERSION=${{ steps.lake-version.outputs.version }}
+      - run: make -C tests test-driver LAKESQL_META_VERSION=${{ steps.lake-version.outputs.version }} LAKESQL_QUERY_VERSION=${{ steps.lake-version.outputs.version }}
+      - run: make -C tests test-lakesql LAKESQL_META_VERSION=${{ steps.lake-version.outputs.version }} LAKESQL_QUERY_VERSION=${{ steps.lake-version.outputs.version }}
 
   bindings_python:
     needs: check
