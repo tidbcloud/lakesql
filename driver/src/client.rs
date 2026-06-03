@@ -26,8 +26,8 @@ use crate::placeholder::PlaceholderVisitor;
 use crate::ConnectionInfo;
 use crate::Params;
 
-use lake_client::PresignedResponse;
 use databend_common_ast::parser::Dialect;
+use lake_client::PresignedResponse;
 use lake_driver_core::error::{Error, Result};
 use lake_driver_core::raw_rows::{RawRow, RawRowIterator};
 use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, ServerStats};

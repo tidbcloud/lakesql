@@ -146,8 +146,8 @@ impl Value {
 
 #[cfg(test)]
 mod tests {
-    use lake_client::schema::DecimalSize;
     use ethnum::i256;
+    use lake_client::schema::DecimalSize;
 
     use crate::value::{NumberValue, Value};
 
