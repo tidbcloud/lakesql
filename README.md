@@ -35,7 +35,7 @@ curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash -s -- -y 
 ### Homebrew
 
 ```bash
-brew tap tidbcloud/tap && brew install lakesql
+brew install tidbcloud/tap/lakesql
 ```
 
 ### Alternative: install via cargo-binstall
