@@ -569,7 +569,7 @@ jobs:
           VERSION: ${{ needs.check.outputs.new_version }}
         run: |
           set -euo pipefail
-          ./scripts/render_homebrew_formula.sh \
+          bash scripts/render_homebrew_formula.sh \
             --version "${VERSION}" \
             --checksums-file dist/homebrew/checksums.txt \
             --output homebrew-tap/Formula/lakesql.rb
