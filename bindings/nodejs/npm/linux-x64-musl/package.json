@@ -1,7 +1,7 @@
 {
   "name": "@tidbcloudlake-driver/lib-linux-x64-musl",
   "repository": "https://github.com/tidbcloud/lakesql.git",
-  "version": "0.1.5-alpha.4",
+  "version": "0.1.5-alpha.5",
   "os": [
     "linux"
   ],
