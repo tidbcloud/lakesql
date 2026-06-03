@@ -519,7 +519,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.HOMEBREW_TAP_GITHUB_APP_ID }}
+          client-id: ${{ secrets.HOMEBREW_TAP_GITHUB_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_GITHUB_APP_PRIVATE_KEY }}
           owner: tidbcloud
           repositories: homebrew-tap
@@ -618,6 +618,29 @@ jobs:
           fi
 
           echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
+      - name: Enable auto-merge for homebrew-tap PR
+        if: steps.tap-pr.outputs.pr_url != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAP_REPO: tidbcloud/homebrew-tap
+          PR_URL: ${{ steps.tap-pr.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+
+          pr_state="$(gh pr view "${PR_URL}" --repo "${TAP_REPO}" --json state --jq '.state')"
+          if [[ "${pr_state}" != "OPEN" ]]; then
+            echo "PR ${PR_URL} is already ${pr_state}; skipping auto-merge"
+            exit 0
+          fi
+
+          auto_merge_enabled="$(gh pr view "${PR_URL}" --repo "${TAP_REPO}" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+          if [[ "${auto_merge_enabled}" == "true" ]]; then
+            echo "Auto-merge is already enabled for ${PR_URL}"
+            exit 0
+          fi
+
+          gh pr merge "${PR_URL}" --repo "${TAP_REPO}" --auto --squash
 
   build_linux_packages:
     needs:
