@@ -39,18 +39,18 @@ import urllib.parse
 print(urllib.parse.quote(sys.argv[1], safe=""))
 PY
 )
-key_dsn="databend://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_file=${private_key_file_encoded}"
+key_dsn="lake://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_file=${private_key_file_encoded}"
 LAKESQL_DSN="${key_dsn}" ${LAKESQL} --output tsv --query="SELECT current_user(), 'dsn'"
 
 env -u LAKESQL_DSN ${LAKESQL} \
-    --dsn="databend://${host}:${port}/?sslmode=disable&presign=on" \
+    --dsn="lake://${host}:${port}/?sslmode=disable&presign=on" \
     --user "${user}" \
     --private-key-file "${private_key_file}" \
     --output tsv \
     --query="SELECT current_user(), 'dsn_user_override'"
 
 env -u LAKESQL_DSN ${LAKESQL} \
-    --dsn="databend://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_passphrase_file=stale-passphrase.txt" \
+    --dsn="lake://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_passphrase_file=stale-passphrase.txt" \
     --private-key-file "${private_key_file}" \
     --output tsv \
     --query="SELECT current_user(), 'stale_passphrase_cleared'"
