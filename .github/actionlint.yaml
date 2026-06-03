@@ -1,0 +1,8 @@
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      # actionlint's popular action metadata for actions/create-github-app-token@v3
+      # is stale and still expects app-id instead of client-id. Drop these exact
+      # false positives until upstream fixes rhysd/actionlint#648/#669.
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token@'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token@'
