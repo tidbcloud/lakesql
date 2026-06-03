@@ -16,15 +16,15 @@ print(pem.replace("'", "''"))
 PY
 )
 
-${BENDSQL} --output null --query="DROP USER IF EXISTS ${user}"
-${BENDSQL} --output null --query="CREATE USER ${user} IDENTIFIED WITH key_pair BY '${public_key_sql}'"
+${LAKESQL} --output null --query="DROP USER IF EXISTS ${user}"
+${LAKESQL} --output null --query="CREATE USER ${user} IDENTIFIED WITH key_pair BY '${public_key_sql}'"
 
 cleanup() {
-    ${BENDSQL} --output null --query="DROP USER IF EXISTS ${user}" >/dev/null 2>&1 || true
+    ${LAKESQL} --output null --query="DROP USER IF EXISTS ${user}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-env -u LAKESQL_DSN ${BENDSQL} \
+env -u LAKESQL_DSN ${LAKESQL} \
     --host "${host}" \
     --port "${port}" \
     --user "${user}" \
@@ -40,16 +40,16 @@ print(urllib.parse.quote(sys.argv[1], safe=""))
 PY
 )
 key_dsn="databend://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_file=${private_key_file_encoded}"
-LAKESQL_DSN="${key_dsn}" ${BENDSQL} --output tsv --query="SELECT current_user(), 'dsn'"
+LAKESQL_DSN="${key_dsn}" ${LAKESQL} --output tsv --query="SELECT current_user(), 'dsn'"
 
-env -u LAKESQL_DSN ${BENDSQL} \
+env -u LAKESQL_DSN ${LAKESQL} \
     --dsn="databend://${host}:${port}/?sslmode=disable&presign=on" \
     --user "${user}" \
     --private-key-file "${private_key_file}" \
     --output tsv \
     --query="SELECT current_user(), 'dsn_user_override'"
 
-env -u LAKESQL_DSN ${BENDSQL} \
+env -u LAKESQL_DSN ${LAKESQL} \
     --dsn="databend://${user}:@${host}:${port}/?sslmode=disable&presign=on&private_key_passphrase_file=stale-passphrase.txt" \
     --private-key-file "${private_key_file}" \
     --output tsv \
