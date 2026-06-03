@@ -432,6 +432,15 @@ jobs:
             "version": "${VERSION}"
           }
           EOF
+      - name: Upload Homebrew release inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: homebrew-release-inputs
+          path: |
+            dist/checksums.txt
+            dist/lakesql-aarch64-apple-darwin.tar.gz
+            dist/lakesql-x86_64-apple-darwin.tar.gz
+          if-no-files-found: error
       - name: Publish binaries, installer, and metadata to S3
         shell: bash
         env:
@@ -494,6 +503,121 @@ jobs:
               /apt/dists/stable/* \
               /rpm/stable/*/repodata/* \
               /apk/stable/*/APKINDEX*
+
+  publish_homebrew:
+    needs:
+      - check
+      - publish_s3
+    if: needs.check.outputs.version_changed == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-homebrew
+    outputs:
+      pull_request_url: ${{ steps.tap-pr.outputs.pr_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create GitHub App token for homebrew-tap
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HOMEBREW_TAP_GITHUB_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_GITHUB_APP_PRIVATE_KEY }}
+          owner: tidbcloud
+          repositories: homebrew-tap
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Download Homebrew release inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: homebrew-release-inputs
+          path: dist/homebrew
+      - name: Check out homebrew-tap
+        uses: actions/checkout@v6
+        with:
+          repository: tidbcloud/homebrew-tap
+          token: ${{ steps.app-token.outputs.token }}
+          path: homebrew-tap
+          persist-credentials: false
+      - name: Configure Git identity for app bot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+
+          user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq '.id')"
+          git config --global user.name "${APP_SLUG}[bot]"
+          git config --global user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+      - name: Prepare tap branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAP_REPO: tidbcloud/homebrew-tap
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          cd homebrew-tap
+          branch="automation/lakesql-homebrew-${VERSION}"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git"
+          if git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git fetch origin "${branch}:refs/remotes/origin/${branch}"
+          fi
+          git checkout -B "${branch}" origin/main
+      - name: Render Formula/lakesql.rb
+        shell: bash
+        env:
+          VERSION: ${{ needs.check.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          ./scripts/render_homebrew_formula.sh \
+            --version "${VERSION}" \
+            --checksums-file dist/homebrew/checksums.txt \
+            --output homebrew-tap/Formula/lakesql.rb
+      - name: Open or update homebrew-tap PR
+        id: tap-pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.check.outputs.new_version }}
+          TAP_REPO: tidbcloud/homebrew-tap
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          branch="automation/lakesql-homebrew-${VERSION}"
+          title="chore: update lakesql formula to ${VERSION}"
+          body="$(printf '%s\n' \
+            '## Summary' \
+            "- update \`Formula/lakesql.rb\` for ${VERSION}" \
+            '- rendered from the LakeSQL release workflow using the Darwin archive checksums prepared by `publish_s3`' \
+            "- source workflow run: ${RUN_URL}")"
+
+          cd homebrew-tap
+
+          if git diff --quiet -- Formula/lakesql.rb; then
+            pr_url="$(gh pr list --repo "${TAP_REPO}" --state open --head "${branch}" --json url --jq '.[0].url // empty')"
+            if [[ -n "${pr_url}" ]]; then
+              echo "Formula already matches the open PR: ${pr_url}"
+              echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
+            else
+              echo "Formula already up to date for ${VERSION}; no PR changes required"
+            fi
+            exit 0
+          fi
+
+          git add Formula/lakesql.rb
+          git commit -m "${title}"
+          git push origin "${branch}:${branch}" --force-with-lease
+
+          pr_number="$(gh pr list --repo "${TAP_REPO}" --state open --head "${branch}" --json number --jq '.[0].number // empty')"
+          if [[ -n "${pr_number}" ]]; then
+            gh pr edit "${pr_number}" --repo "${TAP_REPO}" --title "${title}" --body "${body}" >/dev/null
+            pr_url="$(gh pr view "${pr_number}" --repo "${TAP_REPO}" --json url --jq '.url')"
+          else
+            pr_url="$(gh pr create --repo "${TAP_REPO}" --base main --head "${branch}" --title "${title}" --body "${body}")"
+          fi
+
+          echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
 
   build_linux_packages:
     needs:
@@ -788,6 +912,7 @@ jobs:
       - check
       - release_gate
       - publish_s3
+      - publish_homebrew
       - build_linux_packages
       - verify_linux_packages
       - publish_crates
@@ -802,6 +927,7 @@ jobs:
         id: check_results
         run: |
           if [[ "${{ needs.publish_s3.result }}" == "failure" || \
+                "${{ needs.publish_homebrew.result }}" == "failure" || \
                 "${{ needs.build_linux_packages.result }}" == "failure" || \
                 "${{ needs.verify_linux_packages.result }}" == "failure" || \
                 "${{ needs.publish_crates.result }}" == "failure" || \

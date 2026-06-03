@@ -10,6 +10,34 @@ runs:
     - name: Typos
       uses: crate-ci/typos@v1.46.1
 
+    - name: Shell syntax
+      shell: bash
+      run: |
+        while IFS= read -r -d '' file; do
+          bash -n "$file"
+        done < <(find install scripts -name '*.sh' -print0)
+
+    - name: Homebrew formula renderer
+      shell: bash
+      run: |
+        tmpdir="$(mktemp -d)"
+        trap 'rm -rf "${tmpdir}"' EXIT
+
+        cat > "${tmpdir}/checksums.txt" <<'EOF'
+        1111111111111111111111111111111111111111111111111111111111111111  lakesql-aarch64-apple-darwin.tar.gz
+        2222222222222222222222222222222222222222222222222222222222222222  lakesql-x86_64-apple-darwin.tar.gz
+        EOF
+
+        bash scripts/render_homebrew_formula.sh \
+          --version v1.2.3 \
+          --checksums-file "${tmpdir}/checksums.txt" \
+          --output "${tmpdir}/lakesql.rb"
+
+        grep -F 'version "1.2.3"' "${tmpdir}/lakesql.rb"
+        grep -F 'sha256 "1111111111111111111111111111111111111111111111111111111111111111"' "${tmpdir}/lakesql.rb"
+        grep -F 'sha256 "2222222222222222222222222222222222222222222222222222222222222222"' "${tmpdir}/lakesql.rb"
+        ruby -c "${tmpdir}/lakesql.rb"
+
     - name: Format
       shell: bash
       run: |
