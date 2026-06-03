@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LAKESQL_QUERY_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
-  LAKESQL_META_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
+  LAKESQL_QUERY_VERSION: v1.2.916-nightly # current use upstream(https://github.com/databendlabs/databend) version
+  LAKESQL_META_VERSION: v1.2.916-nightly # current use upstream(https://github.com/databendlabs/databend) version
 
 jobs:
   version:
@@ -52,11 +52,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Run Core Integration Tests
-        run: make -C tests test-core "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
+        run: make -C tests test-core "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Run Driver Integration Tests
-        run: make -C tests test-driver "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
+        run: make -C tests test-driver "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Run LakeSQL Integration Tests
-        run: make -C tests test-lakesql "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
+        run: make -C tests test-lakesql "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
 
   build-python:
     name: build-python-${{ matrix.wheel }}
@@ -148,7 +148,7 @@ jobs:
           password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
-        run: make up "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
+        run: make up "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
@@ -199,7 +199,7 @@ jobs:
           password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
-        run: make up "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
+        run: make up "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
