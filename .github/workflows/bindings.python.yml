@@ -144,12 +144,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Resolve Lake version
+        id: lake-version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh api repos/tidbcloud/lakesql/releases --jq '[.[] | select(.draft | not) | select(.tag_name | endswith("-nightly"))][0].tag_name')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Running integration tests with Lake version: **$version**" >> "$GITHUB_STEP_SUMMARY"
       - name: Prepare
         working-directory: tests
-        env:
-          LAKESQL_QUERY_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
-          LAKESQL_META_VERSION: v1.2.908-nightly # current use upstream(https://github.com/databendlabs/databend) version
-        run: make up
+        run: make up LAKESQL_META_VERSION=${{ steps.lake-version.outputs.version }} LAKESQL_QUERY_VERSION=${{ steps.lake-version.outputs.version }}
       - name: Download artifact
         uses: actions/download-artifact@v8
         with:
