@@ -1,0 +1,4 @@
+'lakesql_keypair_ci'@'%'	2
+'lakesql_keypair_ci'@'%'	dsn
+'lakesql_keypair_ci'@'%'	dsn_user_override
+'lakesql_keypair_ci'@'%'	stale_passphrase_cleared

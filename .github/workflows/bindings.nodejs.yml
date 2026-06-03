@@ -120,4 +120,4 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - run: make -C tests test-bindings-nodejs
+      - run: make -C tests test-bindings-nodejs "LAKESQL_META_VERSION=v1.2.916-nightly" "LAKESQL_QUERY_VERSION=v1.2.916-nightly"
