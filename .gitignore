@@ -19,4 +19,4 @@ package-lock.json
 yarn.lock
 
 /target/
-.alma-snapshots
+.alma-snapshots/
