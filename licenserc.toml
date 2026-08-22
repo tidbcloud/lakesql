@@ -1,11 +1,12 @@
-baseDir = "."
+[header]
+builtin = "Apache-2.0"
 
-headerPath = "Apache-2.0.txt"
-
+[files]
+root = "."
 excludes = [
     # hidden files
-    ".cargo",
-    ".github",
+    ".cargo/**",
+    ".github/**",
     ".dockerignore",
     ".gitignore",
     ".gitattributes",
@@ -22,6 +23,9 @@ excludes = [
     "**/*.hbs",
     "**/*.template",
     "**/*.cue",
+    "**/*.csv",
+    "**/*.feature",
+    "**/*.conf",
     "**/*.json",
     "**/*.sql",
     "**/*.proto",
@@ -39,6 +43,6 @@ excludes = [
     "cli/tests/**",
 ]
 
-[properties]
-inceptionYear = 2025
-copyrightOwner = "TiDB Cloud"
+[props]
+inception_year = 2025
+copyright_owner = "TiDB Cloud"
