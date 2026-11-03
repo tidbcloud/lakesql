@@ -42,7 +42,7 @@
   ],
   "devDependencies": {
     "@cucumber/cucumber": "^11.1.0",
-    "@napi-rs/cli": "^2.18.4",
+    "@napi-rs/cli": "2.18.4",
     "@types/node": "^22.10.1",
     "prettier": "^3.4.2",
     "typedoc": "^0.27.4",
@@ -50,6 +50,11 @@
   },
   "engines": {
     "node": ">= 16"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@napi-rs/cli@2.18.4": "patches/@napi-rs__cli@2.18.4.patch"
+    }
   },
   "scripts": {
     "build": "napi build --platform --target=$NAPI_TARGET --release --js generated.js && node ./scripts/header.js",

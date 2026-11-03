@@ -13,7 +13,7 @@ TiDB Cloud Lake Python Client
 ```python
 from tidbcloudlake_driver import BlockingLakeClient
 
-client = BlockingLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
+client = BlockingLakeClient("lake://root:root@localhost:8000/?sslmode=disable")
 cursor = client.cursor()
 
 cursor.execute(
@@ -29,7 +29,10 @@ cursor.execute(
     )
     """
 )
-cursor.execute("INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?)", (1, 1, 1.0, 'hello', 'world', '2021-01-01', '2021-01-01 00:00:00'))
+cursor.execute(
+    "INSERT INTO test VALUES (?, ?, ?, ?, ?, ?, ?)",
+    (1, 1, 1.0, "hello", "world", "2021-01-01", "2021-01-01 00:00:00"),
+)
 cursor.execute("SELECT * FROM test")
 rows = cursor.fetchall()
 for row in rows:
@@ -42,7 +45,7 @@ cursor.close()
 ```python
 from tidbcloudlake_driver import BlockingLakeClient
 
-client = BlockingLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
+client = BlockingLakeClient("lake://root:root@localhost:8000/?sslmode=disable")
 conn = client.get_conn()
 conn.exec(
     """
@@ -69,8 +72,9 @@ conn.close()
 import asyncio
 from tidbcloudlake_driver import AsyncLakeClient
 
+
 async def main():
-    client = AsyncLakeClient('lake://root:root@localhost:8000/?sslmode=disable')
+    client = AsyncLakeClient("lake://root:root@localhost:8000/?sslmode=disable")
     conn = await client.get_conn()
     await conn.exec(
         """
@@ -90,6 +94,7 @@ async def main():
         print(row.values())
     await conn.close()
 
+
 asyncio.run(main())
 ```
 
@@ -101,10 +106,8 @@ row = await context.conn.query_row("SELECT ?, ?, ?, ?", (3, False, 4, "55"))
 row = await context.conn.query_row(
     "SELECT :a, :b, :c, :d", {"a": 3, "b": False, "c": 4, "d": "55"}
 )
-row = await context.conn.query_row(
-    "SELECT ?", 3
-)
-row = await context.conn.query_row("SELECT ?, ?, ?, ?", params = (3, False, 4, "55"))
+row = await context.conn.query_row("SELECT ?", 3)
+row = await context.conn.query_row("SELECT ?, ?, ?, ?", params=(3, False, 4, "55"))
 ```
 
 ### Query ID tracking and query management
@@ -182,7 +185,9 @@ print(value)
 For example:
 
 ```python
-row = await conn.query_row("settings(geometry_output_format='WKB') SELECT st_point(60, 37)")
+row = await conn.query_row(
+    "settings(geometry_output_format='WKB') SELECT st_point(60, 37)"
+)
 assert isinstance(row.values()[0], bytes)
 ```
 
@@ -195,20 +200,35 @@ The driver provides a complete set of exception classes that follow the PEP 249 
 ```python
 # Base exceptions
 class Warning(Exception): ...
+
+
 class Error(Exception): ...
+
 
 # Interface errors
 class InterfaceError(Error): ...
 
+
 # Database errors
 class DatabaseError(Error): ...
 
+
 # Specific database error types
 class DataError(DatabaseError): ...
+
+
 class OperationalError(DatabaseError): ...
+
+
 class IntegrityError(DatabaseError): ...
+
+
 class InternalError(DatabaseError): ...
+
+
 class ProgrammingError(DatabaseError): ...
+
+
 class NotSupportedError(DatabaseError): ...
 ```
 
@@ -235,11 +255,21 @@ class AsyncLakeConnection:
     async def close(self) -> None: ...
     def last_query_id(self) -> str | None: ...
     async def kill_query(self, query_id: str) -> None: ...
-    async def exec(self, sql: str, params: list[string] | tuple[string] | any = None) -> int: ...
-    async def query_row(self, sql: str, params: list[string] | tuple[string] | any = None) -> Row: ...
-    async def query_iter(self, sql: str, params: list[string] | tuple[string] | any = None) -> RowIterator: ...
-    async def stream_load(self, sql: str, data: list[list[str]], method: str = None) -> ServerStats: ...
-    async def load_file(self, sql: str, file: str, method: str = None) -> ServerStats: ...
+    async def exec(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> int: ...
+    async def query_row(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> Row: ...
+    async def query_iter(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> RowIterator: ...
+    async def stream_load(
+        self, sql: str, data: list[list[str]], method: str = None
+    ) -> ServerStats: ...
+    async def load_file(
+        self, sql: str, file: str, method: str = None
+    ) -> ServerStats: ...
 ```
 
 ### BlockingLakeClient
@@ -260,11 +290,26 @@ class BlockingLakeConnection:
     def close(self) -> None: ...
     def last_query_id(self) -> str | None: ...
     def kill_query(self, query_id: str) -> None: ...
-    def exec(self, sql: str, params: list[string] | tuple[string] | any = None) -> int: ...
-    def query_row(self, sql: str, params: list[string] | tuple[string] | any = None) -> Row: ...
-    def query_iter(self, sql: str, params: list[string] | tuple[string] | any = None) -> RowIterator: ...
-    def stream_load(self, sql: str, data: list[list[str]], method: str = None) -> ServerStats: ...
-    def load_file(self, sql: str, file: str, method: str = None, format_option: dict = None, copy_options: dict = None) -> ServerStats: ...
+    def exec(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> int: ...
+    def query_row(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> Row: ...
+    def query_iter(
+        self, sql: str, params: list[string] | tuple[string] | any = None
+    ) -> RowIterator: ...
+    def stream_load(
+        self, sql: str, data: list[list[str]], method: str = None
+    ) -> ServerStats: ...
+    def load_file(
+        self,
+        sql: str,
+        file: str,
+        method: str = None,
+        format_option: dict = None,
+        copy_options: dict = None,
+    ) -> ServerStats: ...
 ```
 
 ### BlockingLakeCursor
