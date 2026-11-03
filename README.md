@@ -258,7 +258,7 @@ Examples:
 | Arg                         | Description                                                                                                                                                      | Default   |
 |-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
 | `query_result_format`       | (Since v0.33.1) Format to fetch result set, available arguments are `json`/`arrow`.                                                                              | `JSON`    |
-| `sslmode`                   | SSL mode, available values are `enable`/`disable`.                                                                                                               | `disable` |
+| `sslmode`                   | SSL mode, available values are `enable`/`disable`.                                                                                                               | `enable` |
 | `wait_time_secs`            | Request wait time for page.                                                                                                                                      | `1`       |
 | `max_rows_per_page`         | Max result rows for a single page.                                                                                                                               | `10000`   |
 | `page_request_timeout_secs` | Timeout for a single page request.                                                                                                                               | `30`      |
@@ -305,3 +305,20 @@ _Note: Docker and Docker Compose needed_
 ```bash
 make integration
 ```
+
+### Connection and local diagnostic security
+
+TLS is enabled unless explicitly disabled with `--tls false`, `sslmode=disable`,
+or the corresponding configuration setting. Use an explicit plaintext setting
+for a local development server that does not provide TLS.
+
+Query-operation logs omit SQL text and heartbeat logs omit payloads. On
+Unix the CLI makes its log directory accessible only to the current user.
+Credential-related SQL (including password, token, secret and connection
+statements) is omitted from interactive history. This is conservative filtering;
+arbitrary application data in a query cannot automatically be identified as a secret.
+
+The RSA keypair under `cli/tests/fixtures` is a public test fixture for the
+short-lived `lakesql_keypair_ci` test user. Never reuse it for a real identity.
+`SensitiveString` redacts Display/Debug; serialization intentionally retains the
+value for compatibility and must not be used as a redacted diagnostic format.

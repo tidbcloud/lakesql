@@ -41,7 +41,6 @@ use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use percent_encoding::percent_decode_str;
-use reqwest::cookie::CookieStore;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::multipart::{Form, Part};
 use reqwest::{
@@ -429,10 +428,8 @@ impl APIClient {
             Some(n) => n,
             None => format!("lake-client-rust/{}", VERSION.as_str()),
         };
-        let cookie_provider = GlobalCookieStore::new();
-        let cookie = HeaderValue::from_str("cookie_enabled=true").unwrap();
-        let mut initial_cookies = [&cookie].into_iter();
-        cookie_provider.set_cookies(&mut initial_cookies, &Url::parse("https://a.com").unwrap());
+        let cookie_provider = GlobalCookieStore::default();
+        cookie_provider.add_cookie_str("cookie_enabled=true; Path=/", &self.endpoint);
         let mut cli_builder = HttpClient::builder()
             .user_agent(ua)
             .connect_timeout(self.connect_timeout)
@@ -583,7 +580,7 @@ impl APIClient {
         need_progress: bool,
         params: Option<serde_json::Value>,
     ) -> Result<Pages> {
-        info!("start query: {sql}");
+        info!("start query");
         let (resp, batches) = self.start_query_inner(sql, None, false, params).await?;
         Pages::new(self.clone(), resp, batches, need_progress)
     }
@@ -737,8 +734,13 @@ impl APIClient {
         next_uri: &str,
         node_id: &Option<String>,
     ) -> Result<(QueryResponse, Vec<RecordBatch>)> {
-        info!("query page: {next_uri}");
         let endpoint = self.endpoint.join(next_uri)?;
+        if endpoint.origin() != self.endpoint.origin() {
+            return Err(Error::BadArgument(
+                "query page URL must use the configured endpoint origin".to_string(),
+            ));
+        }
+        info!("query page");
         let mut headers = self.make_headers(Some(query_id))?;
         if self.capability.arrow_data && self.query_result_format == "arrow" {
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
@@ -875,7 +877,7 @@ impl APIClient {
         file_format_options: BTreeMap<&str, &str>,
         copy_options: BTreeMap<&str, &str>,
     ) -> Result<QueryStats> {
-        info!("insert with stage: {sql}, format: {file_format_options:?}, copy: {copy_options:?}");
+        info!("insert with stage");
         let stage_attachment = Some(StageAttachmentConfig {
             location: stage,
             file_format_options: Some(file_format_options),
@@ -1132,7 +1134,7 @@ impl APIClient {
         }
         let json: Value = json_from_slice(&response.body)?;
         let session_id = self.session_id.as_str();
-        info!("[session {session_id}] heartbeat request={body}, response={json}");
+        info!("[session {session_id}] heartbeat completed");
         if let Some(queries_to_remove) = json.get("queries_to_remove") {
             if let Some(arr) = queries_to_remove.as_array() {
                 if !arr.is_empty() {
