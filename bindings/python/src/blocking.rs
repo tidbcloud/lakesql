@@ -417,7 +417,7 @@ impl BlockingLakeCursor {
 
     #[pyo3(signature = (size=1))]
     pub fn fetchmany(&mut self, py: Python, size: Option<usize>) -> PyResult<Vec<Row>> {
-        let mut result = self.buffer.drain(..).collect::<Vec<_>>();
+        let mut result = std::mem::take(&mut self.buffer);
         if let Some(ref rows) = self.rows {
             let size = size.unwrap_or(1);
             while result.len() < size {
@@ -436,7 +436,7 @@ impl BlockingLakeCursor {
     }
 
     pub fn fetchall(&mut self, py: Python) -> PyResult<Vec<Row>> {
-        let mut result = self.buffer.drain(..).collect::<Vec<_>>();
+        let mut result = std::mem::take(&mut self.buffer);
         match self.rows.take() {
             Some(rows) => {
                 let fetched = wait_for_future(py, async move {
