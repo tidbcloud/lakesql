@@ -16,12 +16,10 @@ use std::sync::Arc;
 
 #[cfg(feature = "cp38")]
 use chrono::offset::Offset;
-#[cfg(feature = "cp38")]
-use chrono::FixedOffset;
 use chrono::{Duration, NaiveDate};
 use once_cell::sync::Lazy;
 use pyo3::exceptions::{PyAttributeError, PyException, PyStopAsyncIteration, PyStopIteration};
-use pyo3::sync::GILOnceCell;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple, PyType};
 use pyo3::{intern, IntoPyObjectExt};
 use pyo3::{prelude::*, BoundObject};
@@ -40,14 +38,15 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     version.to_string()
 });
 
-pub static DECIMAL_CLS: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+pub static DECIMAL_CLS: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
 fn get_decimal_cls(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
     DECIMAL_CLS
-        .get_or_try_init(py, || {
-            py.import(intern!(py, "decimal"))?
+        .get_or_try_init(py, || -> PyResult<Py<PyType>> {
+            Ok(py
+                .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
-                .extract()
+                .extract()?)
         })
         .map(|ty| ty.bind(py))
 }
