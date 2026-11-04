@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LAKESQL_QUERY_VERSION: v1.2.916-nightly # current use upstream(https://github.com/databendlabs/databend) version
-  LAKESQL_META_VERSION: v1.2.916-nightly # current use upstream(https://github.com/databendlabs/databend) version
+  LAKESQL_QUERY_VERSION: v1.2.960-nightly # current use upstream(https://github.com/databendlabs/databend) version
+  LAKESQL_META_VERSION: v1.2.960-nightly # current use upstream(https://github.com/databendlabs/databend) version
 
 jobs:
   version:
