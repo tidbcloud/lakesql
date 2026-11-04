@@ -27,6 +27,7 @@ trap cleanup EXIT
 env -u LAKESQL_DSN ${LAKESQL} \
     --host "${host}" \
     --port "${port}" \
+    --tls=false \
     --user "${user}" \
     --private-key-file "${private_key_file}" \
     --output tsv \
