@@ -281,7 +281,7 @@ impl BlockingLakeCursor {
 #[pymethods]
 impl BlockingLakeCursor {
     #[getter]
-    pub fn description<'p>(&'p self, py: Python<'p>) -> PyResult<PyObject> {
+    pub fn description<'p>(&'p self, py: Python<'p>) -> PyResult<Py<PyAny>> {
         if let Some(ref schema) = self.schema {
             let mut fields = vec![];
             for field in schema.fields() {
@@ -336,7 +336,7 @@ impl BlockingLakeCursor {
         operation: String,
         params: Option<Bound<'p, PyAny>>,
         values: Option<Bound<'p, PyAny>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         if self.closed {
             return Err(PyException::new_err("BlockingLakeCursor already closed"));
         }
@@ -374,11 +374,11 @@ impl BlockingLakeCursor {
         py: Python<'p>,
         sql: String,
         seq_of_parameters: Vec<Bound<'p, PyAny>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         self.reset();
         let conn = self.conn.clone();
         if let Some(param) = seq_of_parameters.first() {
-            if param.downcast::<PyList>().is_ok() || param.downcast::<PyTuple>().is_ok() {
+            if param.cast::<PyList>().is_ok() || param.cast::<PyTuple>().is_ok() {
                 let strings = to_csv_strings(seq_of_parameters)?;
                 let strs = strings
                     .iter()
@@ -417,7 +417,7 @@ impl BlockingLakeCursor {
 
     #[pyo3(signature = (size=1))]
     pub fn fetchmany(&mut self, py: Python, size: Option<usize>) -> PyResult<Vec<Row>> {
-        let mut result = self.buffer.drain(..).collect::<Vec<_>>();
+        let mut result = std::mem::take(&mut self.buffer);
         if let Some(ref rows) = self.rows {
             let size = size.unwrap_or(1);
             while result.len() < size {
@@ -436,7 +436,7 @@ impl BlockingLakeCursor {
     }
 
     pub fn fetchall(&mut self, py: Python) -> PyResult<Vec<Row>> {
-        let mut result = self.buffer.drain(..).collect::<Vec<_>>();
+        let mut result = std::mem::take(&mut self.buffer);
         match self.rows.take() {
             Some(rows) => {
                 let fetched = wait_for_future(py, async move {
@@ -492,7 +492,7 @@ fn to_csv_field(v: Bound<PyAny>) -> PyResult<String> {
     if v.is_none() {
         return Ok("".to_string());
     }
-    match v.downcast::<PyAny>() {
+    match v.cast::<PyAny>() {
         Ok(v) => {
             if let Ok(v) = v.extract::<String>() {
                 Ok(v)
@@ -504,9 +504,9 @@ fn to_csv_field(v: Bound<PyAny>) -> PyResult<String> {
                 Ok(v.to_string())
             } else {
                 // Try to convert dict-like objects to JSON string
-                if let Ok(dict) = v.downcast::<pyo3::types::PyDict>() {
+                if let Ok(dict) = v.cast::<pyo3::types::PyDict>() {
                     // Convert Python dict to JSON string
-                    let json_string = Python::with_gil(|py| {
+                    let json_string = Python::attach(|py| {
                         let json_module = py.import("json")?;
                         let dumps = json_module.getattr("dumps")?;
                         let result = dumps.call1((dict,))?;

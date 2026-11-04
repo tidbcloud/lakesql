@@ -92,10 +92,14 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: integration
-      # - name: Get License from Variable
-      #   run: |
-      #     echo "::add-mask::${{ vars.LAKE_LICENSE_TRIAL }}"
-      #     echo "QUERY_LAKESQL_ENTERPRISE_LICENSE=${{ vars.LAKE_LICENSE_TRIAL }}" >> $GITHUB_ENV
+      - name: Configure test license
+        env:
+          TEST_LICENSE: ${{ vars.LAKE_LICENSE_TRIAL }}
+        run: |
+          if [[ -n "$TEST_LICENSE" ]]; then
+            echo "::add-mask::$TEST_LICENSE"
+            printf 'QUERY_DATABEND_ENTERPRISE_LICENSE=%s\n' "$TEST_LICENSE" >> "$GITHUB_ENV"
+          fi
       - run: make -C tests test-core "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - run: make -C tests test-driver "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"
       - run: make -C tests test-lakesql "LAKESQL_META_VERSION=${LAKESQL_META_VERSION}" "LAKESQL_QUERY_VERSION=${LAKESQL_QUERY_VERSION}"

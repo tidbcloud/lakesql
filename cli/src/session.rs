@@ -24,6 +24,7 @@ use crate::config::TimeOption;
 use crate::display::INTERRUPTED_MESSAGE;
 use crate::display::{format_write_progress, ChunkDisplay, FormatDisplay};
 use crate::helper::CliHelper;
+use crate::history::should_record_history;
 use crate::sql_parser::SqlParser;
 use crate::VERSION;
 use anyhow::anyhow;
@@ -329,7 +330,7 @@ impl Session {
                 Ok(line) => {
                     let queries = self.append_query(&line);
                     for query in queries {
-                        if !query.starts_with('!') {
+                        if !query.starts_with('!') && should_record_history(&query) {
                             let _ = rl.add_history_entry(format!(
                                 "{}{}",
                                 query, self.settings.sql_delimiter

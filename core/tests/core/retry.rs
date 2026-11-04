@@ -414,3 +414,26 @@ async fn query_page_404_maps_to_query_not_found() {
 
     server.abort();
 }
+
+#[tokio::test]
+async fn query_page_rejects_cross_origin_before_sending_credentials() {
+    let handler: Arc<ResponseHandler> =
+        Arc::new(|_, _| (200, "application/json", ok_query_response("ok")));
+    let (port, requests, server) = spawn_test_server(handler);
+    let client = APIClient::new(&build_dsn(port, 1, ""), None).await.unwrap();
+    for uri in [
+        "http://other.invalid/page".to_string(),
+        format!(
+            "http://127.0.0.1:{}/page",
+            if port == 65535 { port - 1 } else { port + 1 }
+        ),
+        format!("https://127.0.0.1:{port}/page"),
+    ] {
+        let result = client.query_page("q", &uri, &None).await;
+        assert!(matches!(result, Err(Error::BadArgument(_))));
+    }
+    assert!(requests.lock().unwrap().is_empty());
+    client.query_page("q", "/page", &None).await.unwrap();
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    server.abort();
+}

@@ -12,50 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cookie::Cookie;
-use reqwest::cookie::CookieStore;
-use reqwest::header::HeaderValue;
-use std::collections::HashMap;
-use std::sync::RwLock;
-use url::Url;
+// Use the standard jar so Domain, Path, Secure and expiry rules apply to every request.
+pub(crate) use reqwest::cookie::Jar as GlobalCookieStore;
 
-pub(crate) struct GlobalCookieStore {
-    cookies: RwLock<HashMap<String, Cookie<'static>>>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::cookie::CookieStore;
+    use reqwest::header::HeaderValue;
+    use url::Url;
 
-impl GlobalCookieStore {
-    pub fn new() -> Self {
-        GlobalCookieStore {
-            cookies: RwLock::new(HashMap::new()),
+    #[test]
+    fn cookies_are_scoped_to_their_destination() {
+        let jar = GlobalCookieStore::default();
+        let source = Url::parse("https://lake.example/private/page").unwrap();
+        let cookie = HeaderValue::from_static("session=canary; Secure; Path=/private");
+        jar.set_cookies(&mut [&cookie].into_iter(), &source);
+        assert!(jar.cookies(&source).is_some());
+        for url in [
+            "https://other.example/private/page",
+            "https://lake.example/public",
+            "http://lake.example/private/page",
+        ] {
+            assert!(jar.cookies(&Url::parse(url).unwrap()).is_none(), "{url}");
         }
-    }
-}
-
-impl CookieStore for GlobalCookieStore {
-    fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, _url: &Url) {
-        let iter = cookie_headers
-            .filter_map(|val| std::str::from_utf8(val.as_bytes()).ok())
-            .filter_map(|kv| Cookie::parse(kv).map(|c| c.into_owned()).ok());
-
-        let mut guard = self.cookies.write().unwrap();
-        for cookie in iter {
-            guard.insert(cookie.name().to_string(), cookie);
-        }
-    }
-
-    fn cookies(&self, _url: &Url) -> Option<HeaderValue> {
-        let guard = self.cookies.read().unwrap();
-        let s: String = guard
-            .values()
-            .map(|cookie| cookie.name_value())
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        if s.is_empty() {
-            return None;
-        }
-
-        HeaderValue::from_str(&s).ok()
     }
 }

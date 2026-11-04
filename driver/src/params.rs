@@ -51,23 +51,18 @@ pub fn json_value_to_sql_string(v: &serde_json::Value) -> String {
             }
         }
         serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
+        serde_json::Value::String(s) => quote_sql_string(s),
         serde_json::Value::Array(arr) => {
             let items: Vec<String> = arr.iter().map(json_value_to_sql_string).collect();
             format!("[{}]", items.join(", "))
         }
-        serde_json::Value::Object(map) => {
-            let mut s = String::from("'{");
-            for (i, (k, v)) in map.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
-                s.push_str(&format!("\"{k}\": {}", json_value_to_sql_string(v)));
-            }
-            s.push_str("}'::JSON");
-            s
-        }
+        serde_json::Value::Object(_) => format!("{}::JSON", quote_sql_string(&v.to_string())),
     }
+}
+
+// Databend string literals recognize backslash escapes as well as doubled quotes.
+fn quote_sql_string(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
 }
 
 impl Params {
@@ -307,6 +302,39 @@ impl From<serde_json::Value> for Params {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bound_strings_and_json_remain_single_literals() {
+        use databend_common_ast::ast::{Expr, Literal};
+        use databend_common_ast::parser::{parse_expr, tokenize_sql};
+
+        fn literal(sql: &str) -> String {
+            let tokens = tokenize_sql(sql).unwrap();
+            let expr = parse_expr(&tokens, Dialect::PostgreSQL).unwrap();
+            let expr = match expr {
+                Expr::Cast { expr, .. } => *expr,
+                other => other,
+            };
+            match expr {
+                Expr::Literal {
+                    value: Literal::String(value),
+                    ..
+                } => value,
+                other => panic!("parameter escaped its literal: {other:?}"),
+            }
+        }
+        let attack = "\\' OR TRUE -- ";
+        assert_eq!(
+            literal(&json_value_to_sql_string(&serde_json::json!(attack))),
+            attack
+        );
+        let value = serde_json::json!({"a\": null}'::JSON) IS NOT NULL OR TRUE -- ": {"nested": ["quote'", "back\\slash"]}});
+        let rendered = json_value_to_sql_string(&value);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&literal(&rendered)).unwrap(),
+            value
+        );
+    }
 
     #[test]
     fn test_params() {

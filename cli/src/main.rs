@@ -20,6 +20,7 @@ mod config;
 mod display;
 mod gendata;
 mod helper;
+mod history;
 mod session;
 mod sql_parser;
 mod trace;
@@ -268,24 +269,7 @@ pub async fn main() -> Result<()> {
 
         // override only if args.dsn is none
         if args.dsn.is_none() {
-            if let Some(tls) = args.tls {
-                if !tls {
-                    conn_args
-                        .args
-                        .insert("sslmode".to_string(), "disable".to_string());
-                }
-            } else if let Some(tls) = config.connection.tls {
-                if !tls {
-                    conn_args
-                        .args
-                        .insert("sslmode".to_string(), "disable".to_string());
-                }
-            } else if config.connection.tls.is_none() {
-                // means arg.tls is none and not config in config.toml
-                conn_args
-                    .args
-                    .insert("sslmode".to_string(), "disable".to_string());
-            }
+            conn_args.configure_tls(args.tls.or(config.connection.tls));
 
             // override args if specified in command line
             for (k, v) in args.set {

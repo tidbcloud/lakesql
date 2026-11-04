@@ -1,0 +1,18 @@
+diff --git a/scripts/index.js b/scripts/index.js
+--- a/scripts/index.js
++++ b/scripts/index.js
+@@ -11219,7 +11219,13 @@ function processZigLinkerArgs(platform, args) {
+             }
+             return arg;
+         })
+-            .filter((arg) => arg !== '-march=armv7-a' && arg !== '-Wl,--no-undefined-version');
++            // Match cargo-zigbuild's handling of Rust 1.98's new AArch64 flag:
++            // https://github.com/rust-cross/cargo-zigbuild/pull/452
++            .filter((arg) =>
++                arg !== '-march=armv7-a' &&
++                arg !== '-Wl,--no-undefined-version' &&
++                arg !== '-Wl,--fix-cortex-a53-843419'
++            );
+     }
+     return args;
+ }

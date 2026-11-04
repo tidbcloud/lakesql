@@ -24,7 +24,9 @@ use crate::asyncio::{AsyncLakeClient, AsyncLakeConnection};
 use crate::blocking::{BlockingLakeClient, BlockingLakeConnection, BlockingLakeCursor};
 use crate::types::{ConnectionInfo, Field, Row, RowIterator, Schema, ServerStats};
 
-#[pymodule]
+// Preserve the existing GIL requirement; upgrading PyO3 must not opt the module
+// into free-threaded execution without a separate concurrency audit.
+#[pymodule(gil_used = true)]
 fn _lake_driver(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AsyncLakeClient>()?;
     m.add_class::<AsyncLakeConnection>()?;

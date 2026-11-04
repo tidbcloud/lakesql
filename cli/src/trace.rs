@@ -28,6 +28,13 @@ pub async fn init_logging(
     dir: &str,
     level: &str,
 ) -> Result<Vec<Box<dyn Drop + Send + Sync + 'static>>> {
+    // Log files created by the rolling appender inherit the process umask; keep
+    // their parent private even across daily rollover.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
     let mut guards: Vec<Box<dyn Drop + Send + Sync + 'static>> = Vec::new();
     let mut logger = fern::Dispatch::new();
 

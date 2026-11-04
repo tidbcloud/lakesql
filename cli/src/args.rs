@@ -30,6 +30,15 @@ pub struct ConnectionArgs {
 }
 
 impl ConnectionArgs {
+    pub fn configure_tls(&mut self, tls: Option<bool>) {
+        if let Some(tls) = tls {
+            self.args.insert(
+                "sslmode".to_string(),
+                if tls { "enable" } else { "disable" }.to_string(),
+            );
+        }
+    }
+
     pub fn get_dsn(self) -> Result<String> {
         if self.flight && self.args.contains_key("private_key_file") {
             return Err(anyhow!(
