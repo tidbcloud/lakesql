@@ -120,3 +120,7 @@ export declare class ServerStats {
   get spillFileNums(): bigint
   get runningTimeMs(): number
 }
+
+export interface RowIterator extends AsyncIterable<Row> {
+  [Symbol.asyncIterator](): AsyncGenerator<Row, void, unknown>;
+}
