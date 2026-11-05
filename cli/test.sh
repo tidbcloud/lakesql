@@ -31,11 +31,11 @@ cargo build --bin lakesql
 case $TEST_HANDLER in
 "flight")
 	echo "==> Testing Flight SQL handler"
-	export LAKESQL_DSN="lake+flight://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:8900/?sslmode=disable"
+	export LAKESQL_DSN="lake+flight://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:8900/?sslmode=disable&presign_allow_private=true"
 	;;
 "http")
 	echo "==> Testing REST API handler"
-	export LAKESQL_DSN="lake://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:${LAKE_PORT}/?sslmode=disable&presign=on&query_result_format=${QUERY_RESULT_FORMAT}"
+	export LAKESQL_DSN="lake://${LAKE_USER}:${LAKE_PASSWORD}@${LAKE_HOST}:${LAKE_PORT}/?sslmode=disable&presign=on&presign_allow_private=true&query_result_format=${QUERY_RESULT_FORMAT}"
 	;;
 *)
 	echo "Usage: $0 [flight|http]"

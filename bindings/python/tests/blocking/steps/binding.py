@@ -55,7 +55,7 @@ else:
 def _(context):
     dsn = os.getenv(
         "TEST_LAKE_DSN",
-        "lake://root:root@localhost:8000/?sslmode=disable",
+        "lake://root:root@localhost:8000/?sslmode=disable&presign_allow_private=true",
     )
     if os.getenv("QUERY_RESULT_FORMAT") == "arrow":
         dsn += "&query_result_format=arrow"
@@ -527,7 +527,7 @@ def _(context):
     db_name = "drop_result_set_conn"
     dsn = os.getenv(
         "TEST_LAKE_DSN",
-        "lake://root:@localhost:8000/?sslmode=disable",
+        "lake://root:@localhost:8000/?sslmode=disable&presign_allow_private=true",
     )
     client = tidbcloudlake_driver.BlockingLakeClient(dsn)
     n = (1 << 50) + 1

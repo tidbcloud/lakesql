@@ -54,7 +54,7 @@ else:
 async def _(context):
     dsn = os.getenv(
         "TEST_LAKE_DSN",
-        "lake://root:root@localhost:8000/?sslmode=disable",
+        "lake://root:root@localhost:8000/?sslmode=disable&presign_allow_private=true",
     )
     if os.getenv("QUERY_RESULT_FORMAT") == "arrow":
         dsn += "&query_result_format=arrow"
