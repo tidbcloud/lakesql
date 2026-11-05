@@ -322,3 +322,17 @@ The RSA keypair under `cli/tests/fixtures` is a public test fixture for the
 short-lived `lakesql_keypair_ci` test user. Never reuse it for a real identity.
 `SensitiveString` redacts Display/Debug; serialization intentionally retains the
 value for compatibility and must not be used as a redacted diagnostic format.
+
+### Presigned storage security
+
+Presigned uploads/downloads default to public HTTPS targets. Literal and resolved
+private/reserved IP addresses, URL credentials, fragments and unexpected methods
+are rejected. Validated DNS addresses are pinned for the request; redirects and
+ambient HTTP proxies are disabled. Storage requests use a separate client with
+no warehouse credentials/cookies and honor `tls_ca_file`. Errors omit signed
+URLs and server response bodies. Customer-operated private storage can explicitly
+opt in with `presign_allow_private=true` in the DSN; this also permits HTTP and
+should only be used for storage endpoints controlled by the operator.
+
+`!install duckdb` now checks for an existing installation and otherwise provides
+manual installation guidance. It no longer downloads or executes network scripts.

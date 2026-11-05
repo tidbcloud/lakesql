@@ -38,9 +38,12 @@ pub use error::Error;
 pub use error::RequestKind;
 pub use pages::Page;
 pub use pages::Pages;
-pub use presign::presign_download_from_stage;
 pub use presign::presign_upload_to_stage;
 pub use presign::PresignedResponse;
+pub use presign::{
+    presign_download_from_stage, presign_download_with_options, presign_upload_with_options,
+    PresignOptions,
+};
 pub use response::QueryStats;
 pub use response::SchemaField;
 pub use settings::GeometryDataType;

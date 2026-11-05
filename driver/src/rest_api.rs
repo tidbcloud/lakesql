@@ -119,6 +119,10 @@ impl RestAPIConnection {
 
 #[async_trait]
 impl IConnection for RestAPIConnection {
+    fn presign_options(&self) -> lake_client::PresignOptions {
+        self.client.presign_options()
+    }
+
     async fn info(&self) -> ConnectionInfo {
         ConnectionInfo {
             handler: "RestAPI".to_string(),

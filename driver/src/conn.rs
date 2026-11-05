@@ -28,7 +28,7 @@ use tokio_stream::StreamExt;
 use crate::client::LoadMethod;
 use lake_client::schema::{DataType, Field, NumberDataType, Schema};
 use lake_client::StageLocation;
-use lake_client::{presign_download_from_stage, PresignedResponse};
+use lake_client::{presign_download_with_options, PresignOptions, PresignedResponse};
 use lake_driver_core::error::{Error, Result};
 use lake_driver_core::raw_rows::{RawRow, RawRowIterator};
 use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, ServerStats};
@@ -126,6 +126,10 @@ pub trait IConnection: Send + Sync {
 
     /// Get presigned url for a given operation and stage location.
     /// The operation can be "UPLOAD" or "DOWNLOAD".
+    fn presign_options(&self) -> PresignOptions {
+        PresignOptions::default()
+    }
+
     async fn get_presigned_url(&self, operation: &str, stage: &str) -> Result<PresignedResponse> {
         info!("get presigned url: {} {}", operation, stage);
         let sql = format!("PRESIGN {operation} {stage}");
@@ -273,7 +277,13 @@ pub trait IConnection: Send + Sync {
         for file in files {
             let local_file = Path::new(local_dsn.path()).join(&file.basename);
             let (status, size) = match self.get_presigned_url("DOWNLOAD", &file.stage_file).await {
-                Ok(presign) => match presign_download_from_stage(presign, &local_file).await {
+                Ok(presign) => match presign_download_with_options(
+                    presign,
+                    &local_file,
+                    &self.presign_options(),
+                )
+                .await
+                {
                     Ok(size) => {
                         total_count += 1;
                         total_size += size as usize;
