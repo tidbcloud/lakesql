@@ -35,7 +35,7 @@ use crate::client::LoadMethod;
 use crate::conn::{ConnectionInfo, IConnection, Reader};
 use lake_client::schema::Schema;
 use lake_client::SensitiveString;
-use lake_client::{presign_upload_to_stage, ResultFormatSettings};
+use lake_client::{presign_upload_with_options, PresignOptions, ResultFormatSettings};
 use lake_driver_core::error::{Error, Result};
 use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, Rows, ServerStats};
 
@@ -48,6 +48,13 @@ pub struct FlightSQLConnection {
 
 #[async_trait]
 impl IConnection for FlightSQLConnection {
+    fn presign_options(&self) -> PresignOptions {
+        PresignOptions {
+            tls_ca_file: self.args.tls_ca_file.clone(),
+            allow_private: self.args.presign_allow_private,
+        }
+    }
+
     async fn info(&self) -> ConnectionInfo {
         ConnectionInfo {
             handler: "FlightSQL".to_string(),
@@ -123,7 +130,7 @@ impl IConnection for FlightSQLConnection {
     /// Always use presigned url to upload stage for FlightSQL
     async fn upload_to_stage(&self, stage: &str, data: Reader, size: u64) -> Result<()> {
         let presign = self.get_presigned_url("UPLOAD", stage).await?;
-        presign_upload_to_stage(presign, data, size).await?;
+        presign_upload_with_options(presign, data, size, &self.presign_options()).await?;
         Ok(())
     }
 
@@ -242,6 +249,7 @@ struct Args {
     warehouse: Option<String>,
     tls: bool,
     tls_ca_file: Option<String>,
+    presign_allow_private: bool,
     connect_timeout: Duration,
     query_timeout: Duration,
     tcp_nodelay: bool,
@@ -263,6 +271,7 @@ impl Default for Args {
             warehouse: None,
             tls: true,
             tls_ca_file: None,
+            presign_allow_private: false,
             user: "root".to_string(),
             password: SensitiveString::from(""),
             connect_timeout: Duration::from_secs(20),
@@ -300,6 +309,11 @@ impl Args {
                     }
                 },
                 "tls_ca_file" => args.tls_ca_file = Some(v.to_string()),
+                "presign_allow_private" => {
+                    args.presign_allow_private = v.parse().map_err(|_| {
+                        Error::BadArgument("presign_allow_private must be true or false".into())
+                    })?
+                }
                 "private_key_file" | "private_key_passphrase_file" => {
                     return Err(Error::BadArgument(
                         "key-pair authentication is not supported with FlightSQL".to_string(),

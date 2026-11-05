@@ -43,7 +43,7 @@ const { Client } = require("../index.js");
 
 const dsn = process.env.TEST_LAKE_DSN
   ? process.env.TEST_LAKE_DSN
-  : "lake://root:@localhost:8000/default?sslmode=disable";
+  : "lake://root:@localhost:8000/default?sslmode=disable&presign_allow_private=true";
 
 const POINT_GEOJSON = '{"type": "Point", "coordinates": [60,37]}';
 const POINT_WKT = "POINT(60 37)";

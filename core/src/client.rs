@@ -21,7 +21,9 @@ use crate::login::{
     LoginRequest, LoginResponseResult, RefreshResponse, RefreshSessionTokenRequest,
     SessionTokenInfo,
 };
-use crate::presign::{presign_upload_to_stage, PresignMode, PresignedResponse, Reader};
+use crate::presign::{
+    presign_upload_with_options, PresignMode, PresignOptions, PresignedResponse, Reader,
+};
 use crate::response::LoadResponse;
 use crate::stage::StageLocation;
 use crate::{
@@ -133,6 +135,7 @@ pub struct APIClient {
     page_request_timeout: Duration,
 
     tls_ca_file: Option<String>,
+    presign_allow_private: bool,
 
     presign: Mutex<PresignMode>,
     last_node_id: Mutex<Option<String>>,
@@ -326,6 +329,11 @@ impl APIClient {
                         )))
                     }
                 },
+                "presign_allow_private" => {
+                    client.presign_allow_private = v.parse().map_err(|_| {
+                        Error::BadArgument("presign_allow_private must be true or false".into())
+                    })?;
+                }
                 "tls_ca_file" => {
                     client.tls_ca_file = Some(v.to_string());
                 }
@@ -409,6 +417,13 @@ impl APIClient {
         client.session_state = Mutex::new(session_state);
 
         Ok(client)
+    }
+
+    pub fn presign_options(&self) -> PresignOptions {
+        PresignOptions {
+            tls_ca_file: self.tls_ca_file.clone(),
+            allow_private: self.presign_allow_private,
+        }
     }
 
     pub fn host(&self) -> &str {
@@ -935,7 +950,7 @@ impl APIClient {
             PresignMode::Off => self.upload_to_stage_with_stream(stage, data, size).await,
             PresignMode::On => {
                 let presigned = self.get_presigned_upload_url(stage).await?;
-                presign_upload_to_stage(presigned, data, size).await
+                presign_upload_with_options(presigned, data, size, &self.presign_options()).await
             }
             PresignMode::Auto => {
                 unreachable!("PresignMode::Auto should be handled during client initialization")
@@ -1480,6 +1495,7 @@ impl Default for APIClient {
             connect_timeout: Duration::from_secs(10),
             page_request_timeout: Duration::from_secs(300),
             tls_ca_file: None,
+            presign_allow_private: false,
             presign: Mutex::new(PresignMode::Auto),
             route_hint: RouteHintGenerator::new(),
             last_node_id: Default::default(),

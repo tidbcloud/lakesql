@@ -21,7 +21,7 @@ test-core: up
 
 test-driver: up
 	cargo test --test driver
-	TEST_LAKE_DSN=lake+flight://root:@localhost:8900/default?sslmode=disable cargo test --features flight-sql --test driver
+	TEST_LAKE_DSN=lake+flight://root:@localhost:8900/default?sslmode=disable\&presign_allow_private=true cargo test --features flight-sql --test driver
 
 test-lakesql: up
 	cd .. && ./cli/test.sh http

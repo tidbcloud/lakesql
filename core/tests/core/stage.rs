@@ -22,9 +22,12 @@ use crate::common::DEFAULT_DSN;
 async fn insert_with_stage(presign: bool) {
     let dsn = option_env!("TEST_LAKE_DSN").unwrap_or(DEFAULT_DSN);
     let client = if presign {
-        APIClient::new(&format!("{dsn}&presign=on"), None)
-            .await
-            .unwrap()
+        APIClient::new(
+            &format!("{dsn}&presign=on&presign_allow_private=true"),
+            None,
+        )
+        .await
+        .unwrap()
     } else {
         APIClient::new(&format!("{dsn}&presign=off"), None)
             .await
