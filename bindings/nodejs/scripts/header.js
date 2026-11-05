@@ -18,8 +18,17 @@ const fs = require("fs");
 
 let files = ["generated.js", "index.d.ts"];
 
-for (path of files) {
+for (const path of files) {
   let data = fs.readFileSync(path, "utf8");
+  if (path === "index.d.ts" && !data.includes("interface RowIterator extends AsyncIterable<Row>")) {
+    // index.js adds this protocol to the native class at runtime. Preserve it
+    // when regenerating the NAPI declarations so for-await works in TypeScript.
+    data += `
+export interface RowIterator extends AsyncIterable<Row> {
+  [Symbol.asyncIterator](): AsyncGenerator<Row, void, unknown>;
+}
+`;
+  }
   fs.writeFileSync(
     path,
     `/*
