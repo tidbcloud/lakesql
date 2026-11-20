@@ -14,6 +14,7 @@
 
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use lake_client::{APIClient, Error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -113,6 +114,13 @@ fn build_dsn(port: u16, retry_count: u32, extra: &str) -> String {
 fn spawn_test_server(
     handler: Arc<ResponseHandler>,
 ) -> (u16, Arc<Mutex<Vec<RecordedRequest>>>, JoinHandle<()>) {
+    spawn_test_server_with_first_body_delay(handler, Duration::ZERO)
+}
+
+fn spawn_test_server_with_first_body_delay(
+    handler: Arc<ResponseHandler>,
+    first_body_delay: Duration,
+) -> (u16, Arc<Mutex<Vec<RecordedRequest>>>, JoinHandle<()>) {
     let std_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     std_listener.set_nonblocking(true).unwrap();
     let port = std_listener.local_addr().unwrap().port();
@@ -129,8 +137,13 @@ fn spawn_test_server(
             };
             requests_for_task.lock().unwrap().push(req.clone());
             let (status, content_type, body) = handler(idx, &req);
+            let delay = if idx == 0 {
+                first_body_delay
+            } else {
+                Duration::ZERO
+            };
             idx += 1;
-            let _ = write_response(&mut stream, status, content_type, &body).await;
+            let _ = write_response(&mut stream, status, content_type, &body, delay).await;
         }
     });
 
@@ -216,6 +229,7 @@ async fn write_response(
     status: u16,
     content_type: &str,
     body: &str,
+    delay: Duration,
 ) -> io::Result<()> {
     let reason = match status {
         200 => "OK",
@@ -229,6 +243,9 @@ async fn write_response(
         body_bytes.len()
     );
     stream.write_all(head.as_bytes()).await?;
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
     stream.write_all(body_bytes).await?;
     stream.shutdown().await
 }
@@ -267,6 +284,60 @@ async fn retry_503_then_success() {
     assert_eq!(result.data, vec![vec![Some("42".to_string())]]);
     assert_eq!(requests.lock().unwrap().len(), 2);
 
+    server.abort();
+}
+
+#[tokio::test]
+async fn query_start_does_not_retry_a_body_timeout() {
+    let handler: Arc<ResponseHandler> =
+        Arc::new(|_, _| (200, "application/json", ok_query_response("42")));
+    let (port, requests, server) =
+        spawn_test_server_with_first_body_delay(handler, Duration::from_millis(1250));
+    let dsn = build_dsn(port, 2, "presign=off&page_request_timeout_secs=1");
+    let client = APIClient::new(&dsn, None).await.unwrap();
+
+    assert!(client.query_all("select 42", None).await.is_err());
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].path, "/v1/query");
+    server.abort();
+}
+
+#[tokio::test]
+async fn retry_401_reapplies_refreshed_session_token() {
+    let old = "old-test-token";
+    let new = "new-test-token";
+    let refresh = "test-refresh-token";
+    let handler: Arc<ResponseHandler> = Arc::new(move |idx, req| {
+        let body = match (idx, req.path.as_str(), req.authorization.as_deref()) {
+            (0, "/v1/session/login", _) => serde_json::json!({
+                "version": "1.2.900",
+                "tokens": {"session_token": old, "refresh_token": refresh}
+            })
+            .to_string(),
+            (1, "/v1/query", Some("Bearer old-test-token")) => {
+                return (
+                    401,
+                    "application/json",
+                    logic_error_json_body(5101, "session token expired"),
+                );
+            }
+            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => {
+                serde_json::json!({"session_token": new, "refresh_token": refresh}).to_string()
+            }
+            (3, "/v1/query", Some("Bearer new-test-token")) => ok_query_response("42"),
+            (4, "/v1/session/logout", Some("Bearer new-test-token")) => "{}".to_string(),
+            _ => panic!("unexpected mock request: {req:?}"),
+        };
+        (200, "application/json", body)
+    });
+    let (port, requests, server) = spawn_test_server(handler);
+    let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_delay_secs=0&retry_count=1");
+    let client = APIClient::new(&dsn, None).await.unwrap();
+    let response = client.query_all("select 42", None).await.unwrap();
+    assert_eq!(response.data, vec![vec![Some("42".to_string())]]);
+    client.close().await;
+    assert_eq!(requests.lock().unwrap().len(), 5);
     server.abort();
 }
 

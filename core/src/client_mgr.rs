@@ -39,10 +39,13 @@ impl ClientManager {
         let idle_interval = 3600;
         let mut busy_interval = 15;
         if let Ok(val) = std::env::var("LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS") {
-            // only used for test
-            busy_interval = val
-                .parse()
-                .expect("Failed to parse LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS");
+            // Only used for tests. Keep the default for malformed values.
+            match val.parse() {
+                Ok(parsed) => busy_interval = parsed,
+                Err(e) => {
+                    log::warn!("ignoring invalid LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS: {e}")
+                }
+            }
         }
         let clients = Arc::new(Mutex::new(HashMap::<String, Weak<APIClient>>::new()));
         let clients_clone = clients.clone();
