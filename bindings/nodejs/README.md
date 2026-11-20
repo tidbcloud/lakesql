@@ -156,3 +156,17 @@ pnpm install
 pnpm run build:debug
 pnpm run test
 ```
+
+Set `RUST_TARGET` when cross-compiling. The build regenerates `generated.js` and
+`native.d.ts` from the Rust bindings. Commit changes to `native.d.ts` after
+rebuilding instead of editing it by hand.
+
+`index.d.ts` is the public type entry point. It reuses the generated declarations
+and adds types for methods implemented in `index.js`. Changes to methods already
+exported by Rust flow through automatically. When a new `#[napi]` struct or enum
+is intended to be public, re-export it in `index.d.ts` and add an import from the
+public entry point to `tests/types/basic.ts`. Use `export type` for type-only
+names; runtime values must also be exported from `index.js`.
+
+Run `pnpm run test:types` to check the public types without building Rust or
+connecting to a database.
