@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
-import { Client } from "../../index";
+import type { Readable } from "node:stream";
+import { Client, type Row, type RowIterator } from "../../index";
 
 async function checkPublicIterator(): Promise<void> {
   const connection = await new Client("lake://example:443/default").getConn();
-  const rows = await connection.queryIter("SELECT 1");
+  const rows: RowIterator = (await connection.queryIter("SELECT ?", [1])) satisfies AsyncIterable<Row | Error>;
+  rows.stream() satisfies Readable;
   for await (const row of rows) {
+    if (row instanceof Error) throw row;
     row.values();
   }
   await connection.close();

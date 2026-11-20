@@ -356,11 +356,15 @@ jobs:
         working-directory: bindings/nodejs
         shell: bash
         env:
-          NAPI_TARGET: ${{ matrix.target }}
+          RUST_TARGET: ${{ matrix.target }}
           MACOSX_DEPLOYMENT_TARGET: 10.12
+        run: pnpm run build
+      - name: Check generated types
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        working-directory: bindings/nodejs
         run: |
-          pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
-          pnpm node ./scripts/header.js
+          pnpm run test:types
+          git diff --exit-code -- native.d.ts
       - name: Strip for macOS
         if: endsWith(matrix.target, '-apple-darwin')
         working-directory: bindings/nodejs
