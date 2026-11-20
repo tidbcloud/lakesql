@@ -125,14 +125,21 @@ jobs:
   integration:
     name: integration-${{ matrix.pyver }}-${{matrix.body}}
     needs: build
-    runs-on: ubuntu-latest
+    # `ubuntu-latest` migrated to Ubuntu 26.04 on 2026-11-18 and
+    # actions/python-versions publishes no CPython 3.8/3.9 builds for it,
+    # so those two interpreters stay on ubuntu-24.04.
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: read
     strategy:
+      fail-fast: false
       matrix:
         pyver: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
         body: ["arrow", "json"]
+        include:
+          - { pyver: "3.8", runner: ubuntu-24.04 }
+          - { pyver: "3.9", runner: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@v6
       - name: Setup Python

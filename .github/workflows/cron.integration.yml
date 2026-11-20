@@ -131,10 +131,17 @@ jobs:
 
   integration-python:
     needs: [version, build-python]
-    runs-on: ubuntu-latest
+    # `ubuntu-latest` migrated to Ubuntu 26.04 on 2026-11-18 and
+    # actions/python-versions publishes no CPython 3.8/3.9 builds for it,
+    # so those two interpreters stay on ubuntu-24.04.
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         pyver: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - { pyver: "3.8", runner: ubuntu-24.04 }
+          - { pyver: "3.9", runner: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@v6
       - name: Setup Python
@@ -214,8 +221,9 @@ jobs:
     needs: [integration, integration-python, integration-nodejs]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - name: Notify Dev Team
-        uses: drayeasy/action-lark-notify@v0.1.4
+        uses: drayeasy/action-lark-notify@v0.2.0
         env:
           LARK_WEBHOOK: ${{ secrets.DEV_TEAM_WEBHOOK_URL }}
           LARK_MESSAGE_TITLE: "⚠️ LakeSQL Integration Tests Failed"
