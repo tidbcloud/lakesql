@@ -517,29 +517,42 @@ fn parse_decimal(text: &str, size: DecimalSize) -> Result<NumberValue> {
     let bytes = text.as_bytes();
     let mut is_negative = false;
 
-    // Check if the number is negative
-    if bytes[start] == b'-' {
-        is_negative = true;
+    // Reject empty input instead of indexing past the end.
+    let Some(&first) = bytes.first() else {
+        return Err(ConvertError::new("decimal", "empty string".to_string()).into());
+    };
+    if matches!(first, b'-' | b'+') {
+        is_negative = first == b'-';
         start += 1;
     }
-
+    let digits_start = start;
     while start < text.len() && bytes[start] == b'0' {
-        start += 1
+        start += 1;
     }
+    let had_leading_zero = start > digits_start;
     let text = &text[start..];
     let point_pos = text.find('.');
     let e_pos = text.find(|c| ['E', 'e'].contains(&c));
     let (i_part, f_part, e_part) = match (point_pos, e_pos) {
-        (Some(p1), Some(p2)) => (&text[..p1], &text[(p1 + 1)..p2], Some(&text[(p2 + 1)..])),
+        (Some(p1), Some(p2)) if p1 < p2 => {
+            (&text[..p1], &text[(p1 + 1)..p2], Some(&text[(p2 + 1)..]))
+        }
+        (Some(_), Some(_)) => return Err(ConvertError::new("decimal", format!("{text:?}")).into()),
         (Some(p), None) => (&text[..p], &text[(p + 1)..], None),
         (None, Some(p)) => (&text[..p], "", Some(&text[(p + 1)..])),
         (None, None) => (text, "", None),
     };
     let exp = match e_part {
-        Some(s) => s.parse::<i32>()?,
+        Some(s) => i64::from(s.parse::<i32>()?),
         None => 0,
     };
-    if i_part.len() as i32 + exp > 76 {
+    if (!had_leading_zero && i_part.is_empty() && f_part.is_empty())
+        || !i_part
+            .bytes()
+            .chain(f_part.bytes())
+            .all(|b| b.is_ascii_digit())
+        || i_part.len() as i64 + exp > 76
+    {
         Err(ConvertError::new("decimal", format!("{text:?}")).into())
     } else {
         let mut digits = Vec::with_capacity(76);
@@ -548,7 +561,7 @@ fn parse_decimal(text: &str, size: DecimalSize) -> Result<NumberValue> {
         if digits.is_empty() {
             digits.push(b'0')
         }
-        let scale = f_part.len() as i32 - exp;
+        let scale = f_part.len() as i64 - exp;
         if scale < 0 {
             // e.g 123.1e3
             for _ in 0..(-scale) {
@@ -557,10 +570,10 @@ fn parse_decimal(text: &str, size: DecimalSize) -> Result<NumberValue> {
         };
 
         let precision = std::cmp::min(digits.len(), 76);
-        let digits = unsafe { std::str::from_utf8_unchecked(&digits[..precision]) };
+        let digits = std::str::from_utf8(&digits[..precision])?;
 
         let result = if size.precision > 38 {
-            NumberValue::Decimal256(i256::from_str(digits).unwrap(), size)
+            NumberValue::Decimal256(i256::from_str(digits)?, size)
         } else if size.precision > 19 {
             NumberValue::Decimal128(digits.parse::<i128>()?, size)
         } else {
@@ -578,5 +591,25 @@ fn parse_decimal(text: &str, size: DecimalSize) -> Result<NumberValue> {
         } else {
             Ok(result)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_invalid_decimal_text() {
+        let size = DecimalSize {
+            precision: 50,
+            scale: 2,
+        };
+        for input in ["", "-", ".", "not a number", "1e2.3", "1e2147483647"] {
+            assert!(parse_decimal(input, size).is_err(), "{input:?}");
+        }
+        assert_eq!(
+            parse_decimal("0", size).unwrap(),
+            NumberValue::Decimal256(i256::ZERO, size)
+        );
     }
 }
