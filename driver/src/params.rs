@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use databend_common_ast::parser::Dialect;
+use lake_driver_core::error::{Error, Result};
 
 pub trait Param: Debug {
     fn as_json_value(&self) -> serde_json::Value;
@@ -95,16 +96,27 @@ impl Params {
         }
     }
 
+    /// Merge parameters of the same binding style.
+    ///
+    /// Panics when mixing positional and named parameters. Use [`Self::try_merge`]
+    /// to handle a mismatch without panicking.
     pub fn merge(&mut self, other: Params) {
+        self.try_merge(other)
+            .expect("Cannot merge QuestionParams with NamedParams");
+    }
+
+    /// Merge parameters, returning an error if their binding styles differ.
+    pub fn try_merge(&mut self, other: Params) -> Result<()> {
         match (self, other) {
-            (Params::QuestionParams(vec1), Params::QuestionParams(vec2)) => {
-                vec1.extend(vec2);
+            (Params::QuestionParams(vec1), Params::QuestionParams(vec2)) => vec1.extend(vec2),
+            (Params::NamedParams(map1), Params::NamedParams(map2)) => map1.extend(map2),
+            _ => {
+                return Err(Error::BadArgument(
+                    "Cannot merge QuestionParams with NamedParams".to_string(),
+                ));
             }
-            (Params::NamedParams(map1), Params::NamedParams(map2)) => {
-                map1.extend(map2);
-            }
-            _ => panic!("Cannot merge QuestionParams with NamedParams"),
         }
+        Ok(())
     }
 
     /// Convert params to a JSON value suitable for server-side parameter binding.
@@ -259,9 +271,7 @@ macro_rules! impl_from_tuple_for_params {
         impl<$head: Param, $($tail: Param),*> From<($head, $($tail),*)> for Params {
             fn from(tuple: ($head, $($tail),*)) -> Self {
                 let (h, $($tail),*) = tuple;
-                let mut params = Params::QuestionParams(vec![h.as_json_value()]);
-                $(params.merge(Params::QuestionParams(vec![$tail.as_json_value()]));)*
-                params
+                Params::QuestionParams(vec![h.as_json_value(), $($tail.as_json_value()),*])
             }
         }
 
@@ -302,6 +312,17 @@ impl From<serde_json::Value> for Params {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn try_merge_rejects_mixed_binding_styles() {
+        let mut params = params! {1};
+        assert!(matches!(
+            params.try_merge(params! {name => "value"}),
+            Err(Error::BadArgument(_))
+        ));
+        params.try_merge(params! {2}).unwrap();
+        assert_eq!(params.to_json_value(), serde_json::json!([1, 2]));
+    }
 
     #[test]
     fn bound_strings_and_json_remain_single_literals() {

@@ -602,8 +602,11 @@ fn create_table(
     if is_single_number_result {
         let mut cells = Vec::new();
         for (idx, cell) in res_vec[0].iter().enumerate() {
-            let f: f64 = cell.content().parse().unwrap();
-            let content = format!("({})", humanize_count(f));
+            let content = match cell.content().parse::<f64>() {
+                Ok(value) => format!("({})", humanize_count(value)),
+                // The rendered cell may already have been truncated.
+                Err(_) => cell.content().to_string(),
+            };
             let cell = Cell::new(&content)
                 .fg(Color::Rgb {
                     r: 128,
@@ -764,7 +767,7 @@ fn compute_column_widths(
 ) -> Vec<usize> {
     let column_num = schema.fields().len();
     // The maximum width must subtract the width of border and line within each column.
-    max_width -= column_num * 3 + 1;
+    max_width = max_width.saturating_sub(column_num.saturating_mul(3).saturating_add(1));
 
     let mut column_widths: Vec<usize> = Vec::with_capacity(column_num);
     // Collect the width of each column header
@@ -863,5 +866,40 @@ fn value_display_width(value: &Value, quote_string: bool) -> usize {
             let value_str = value.to_string();
             UnicodeWidthStr::width(value_str.as_str())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lake_driver::{DataType, Field, NumberDataType, NumberValue};
+
+    fn numeric_row(columns: usize) -> (SchemaRef, Row) {
+        let schema = Arc::new(Schema::from_vec(
+            (0..columns)
+                .map(|i| Field {
+                    name: format!("c{i}"),
+                    data_type: DataType::Number(NumberDataType::Float64),
+                })
+                .collect(),
+        ));
+        let row = Row::new(
+            schema.clone(),
+            vec![Value::Number(NumberValue::Float64(1e20)); columns],
+        );
+        (schema, row)
+    }
+
+    #[test]
+    fn wide_results_do_not_underflow_width_budget() {
+        let (schema, row) = numeric_row(30);
+        let widths = compute_column_widths(schema.as_ref(), &[row], 80, 20, false);
+        assert_eq!(widths.len(), 30);
+    }
+
+    #[test]
+    fn truncated_number_cells_still_render() {
+        let (schema, row) = numeric_row(20);
+        assert!(create_table(schema, &[row], false, 80, 10, 1).is_ok());
     }
 }

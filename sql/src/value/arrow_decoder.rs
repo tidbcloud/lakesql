@@ -180,7 +180,7 @@ impl
                     match array.as_any().downcast_ref::<LargeBinaryArray>() {
                         Some(array) => {
                             let rb = roaring::RoaringTreemap::deserialize_from(array.value(seq))
-                                .expect("failed to deserialize bitmap");
+                                .map_err(|e| ConvertError::new("bitmap", e.to_string()))?;
                             let raw = rb.into_iter().collect::<Vec<_>>();
                             let s = itertools::join(raw.iter(), ",");
                             Ok(Value::Bitmap(s))
@@ -435,6 +435,16 @@ impl
             ArrowDataType::Map(f, _) => match array.as_any().downcast_ref::<MapArray>() {
                 Some(array) => {
                     if let ArrowDataType::Struct(fs) = f.data_type() {
+                        if fs.len() < 2 {
+                            return Err(ConvertError::new(
+                                "map",
+                                format!(
+                                    "map struct must have at least two fields, got {}",
+                                    fs.len()
+                                ),
+                            )
+                            .into());
+                        }
                         let inner_array = unsafe { array.value_unchecked(seq) };
                         let mut values = Vec::with_capacity(inner_array.len());
                         for i in 0..inner_array.len() {
