@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 # Copyright 2025 TiDB Cloud
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
