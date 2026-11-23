@@ -120,10 +120,8 @@ jobs:
         working-directory: bindings/nodejs
         shell: bash
         env:
-          NAPI_TARGET: x86_64-unknown-linux-gnu
-        run: |
-          pnpm napi build --platform --target="$NAPI_TARGET" --release --js generated.js
-          pnpm node ./scripts/header.js
+          RUST_TARGET: x86_64-unknown-linux-gnu
+        run: pnpm run build
       - uses: actions/upload-artifact@v7
         with:
           name: bindings-nodejs
