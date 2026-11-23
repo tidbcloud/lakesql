@@ -32,6 +32,12 @@ or
 curl -fsSL https://lakesql-bin.tidbcloud.com/install/lakesql.sh | bash -s -- -y --prefix /usr/local
 ```
 
+### Homebrew
+
+```bash
+brew install tidbcloud/tap/lakesql
+```
+
 ### Alternative: install via cargo-binstall
 
 If you already use Rust tooling and have `cargo-binstall` available, you can install the prebuilt `lakesql` binary from the published release artifacts:
@@ -81,7 +87,7 @@ sudo dnf install -y lakesql
 ```bash
 curl -fsSL https://lakesql-bin.tidbcloud.com/keys/lakesql-packages.rsa.pub \
   | sudo tee /etc/apk/keys/lakesql-packages.rsa.pub >/dev/null
-echo "https://lakesql-bin.tidbcloud.com/apk/stable" \
+echo "https://lakesql-bin.tidbcloud.com/apk/stable/$(apk --print-arch)" \
   | sudo tee -a /etc/apk/repositories >/dev/null
 sudo apk update
 sudo apk add lakesql
