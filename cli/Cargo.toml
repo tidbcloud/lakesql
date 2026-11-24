@@ -65,4 +65,4 @@ disabled-strategies = ["quick-install"]
 name = "lakesql"
 path = "src/main.rs"
 doctest = false
-test = false
+test = true
