@@ -469,8 +469,6 @@ async fn arrow_is_available_with_login_disabled() {
     let (port, requests, server) = spawn_test_server(handler);
     let dsn = build_dsn(port, 1, "presign=off&query_result_format=arrow");
     let client = APIClient::new(&dsn, None).await.unwrap();
-    assert!(client.capability().streaming_load);
-    assert!(client.capability().server_side_params);
     client.query_all("select 42", None).await.unwrap();
     client
         .query_all_inner("select 42", true, None)
@@ -528,9 +526,6 @@ async fn check_refreshed_session_token(wrapped: bool) {
     let (port, requests, server) = spawn_test_server(handler);
     let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_delay_secs=0&retry_count=1");
     let client = APIClient::new(&dsn, None).await.unwrap();
-    assert!(client.capability().streaming_load);
-    assert!(client.capability().arrow_data);
-    assert!(client.capability().server_side_params);
     let response = client.query_all("select 42", None).await.unwrap();
     assert_eq!(response.data, vec![vec![Some("42".to_string())]]);
     client.close().await;

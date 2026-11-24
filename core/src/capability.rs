@@ -14,28 +14,12 @@
 
 use semver::Version;
 
-#[derive(Debug)]
-pub struct Capability {
-    pub streaming_load: bool,
-    pub arrow_data: bool,
-    pub server_side_params: bool,
-}
-
-impl Default for Capability {
-    fn default() -> Self {
-        // These capabilities are part of the v1.2.925 Query Server baseline,
-        // including when login is disabled and the version is unknown.
-        Self {
-            streaming_load: true,
-            arrow_data: true,
-            server_side_params: true,
-        }
-    }
-}
+#[derive(Debug, Default)]
+pub struct Capability;
 
 impl Capability {
     pub fn from_server_version(_version: &Version) -> Self {
-        // Keep this hook for capabilities introduced after the baseline.
-        Self::default()
+        // Keep this hook for capabilities introduced after the server baseline.
+        Self
     }
 }

@@ -160,7 +160,8 @@ impl IConnection for RestAPIConnection {
     }
 
     fn supports_server_side_params(&self) -> bool {
-        self.client.capability().server_side_params
+        // This is a REST protocol feature, not a server-version check.
+        true
     }
 
     async fn exec(&self, sql: &str) -> Result<i64> {

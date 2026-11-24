@@ -2,8 +2,6 @@
 
 TiDB Cloud Lake Native Client in Rust
 
-LakeSQL requires Query Server v1.2.925 or newer.
-
 ## Components
 
 - [**core**](core): TiDB Cloud Lake RestAPI Rust Client

@@ -760,7 +760,7 @@ impl APIClient {
         let query_id = self.gen_query_id();
         let mut submission = QuerySubmission::new(self, query_id.clone());
         let mut headers = self.make_headers(Some(&query_id))?;
-        if self.capability.arrow_data && self.query_result_format == "arrow" && !force_json_body {
+        if self.query_result_format == "arrow" && !force_json_body {
             debug!("accept arrow data");
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
             req = req.with_arrow();
@@ -878,7 +878,7 @@ impl APIClient {
         }
         info!("query page");
         let mut headers = self.make_headers(Some(query_id))?;
-        if self.capability.arrow_data && self.query_result_format == "arrow" {
+        if self.query_result_format == "arrow" {
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
         }
         let mut builder = self.cli.get(endpoint.clone());
@@ -1667,7 +1667,7 @@ impl Default for APIClient {
             closed: AtomicBool::new(false),
             last_query_id: Default::default(),
             server_version: None,
-            capability: Default::default(),
+            capability: Capability,
             queries_need_heartbeat: Default::default(),
             retry_count: 3,
             retry_delay_secs: 10,
