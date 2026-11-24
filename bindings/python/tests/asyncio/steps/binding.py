@@ -28,11 +28,6 @@ os.environ["RUST_LOG"] = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=d
 import tidbcloudlake_driver
 
 NOW = int(time.time())
-DB_VERSION = os.getenv("DB_VERSION")
-if DB_VERSION is not None:
-    DB_VERSION = tuple(map(int, DB_VERSION.split(".")))
-else:
-    DB_VERSION = (100, 0, 0)
 
 DRIVER_VERSION = os.getenv("DRIVER_VERSION")
 if DRIVER_VERSION is not None:
@@ -153,7 +148,7 @@ async def _(context):
             ),
         ), f"Tuple: {row.values()}"
 
-    if DRIVER_VERSION > (0, 31, 0) and DB_VERSION > (1, 2, 894):
+    if DRIVER_VERSION > (0, 31, 0):
         row = await context.conn.query_row("SELECT st_point(60,37)")
         assert row.values()[0] == POINT_GEOJSON, f"geography: {row.values()}"
 
@@ -279,7 +274,7 @@ async def _(context):
 
 
 async def test_load_file(context, load_method):
-    if DRIVER_VERSION >= (0, 28, 3) and DB_VERSION >= (1, 2, 792):
+    if DRIVER_VERSION >= (0, 28, 3):
         await context.conn.exec("CREATE OR REPLACE DATABASE db1")
         await context.conn.exec("use db1")
 
@@ -309,8 +304,6 @@ async def test_load_file(context, load_method):
     rows = await context.conn.query_iter("SELECT * FROM test1")
     ret = [row.values() for row in rows]
 
-    quoted_empty = "" if DB_VERSION >= (1, 2, 866) else None
-
     expected = [
         (
             -1,
@@ -326,7 +319,7 @@ async def test_load_file(context, load_method):
             2,
             2.0,
             '"',
-            quoted_empty,
+            "",
             date(2012, 5, 31),
             datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
         ),
@@ -469,7 +462,7 @@ async def _(context):
 
 @then("Query should not timeout")
 async def _(context):
-    if not (DRIVER_VERSION > (0, 30, 3) and DB_VERSION >= (1, 2, 709)):
+    if DRIVER_VERSION <= (0, 30, 3):
         print("SKIP")
         return
 

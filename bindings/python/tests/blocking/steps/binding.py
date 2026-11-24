@@ -29,11 +29,6 @@ os.environ["RUST_LOG"] = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=d
 import tidbcloudlake_driver
 
 NOW = int(time.time())
-DB_VERSION = os.getenv("DB_VERSION")
-if DB_VERSION is not None:
-    DB_VERSION = tuple(map(int, DB_VERSION.split(".")))
-else:
-    DB_VERSION = (100, 0, 0)
 
 DRIVER_VERSION = os.getenv("DRIVER_VERSION")
 if DRIVER_VERSION is not None:
@@ -134,11 +129,7 @@ def _(context):
 
     import sys
 
-    if (
-        DRIVER_VERSION > (0, 30, 3)
-        and DB_VERSION > (1, 2, 836)
-        and sys.version_info.minor >= 8
-    ):
+    if DRIVER_VERSION > (0, 30, 3) and sys.version_info.minor >= 8:
         tz = "Asia/Shanghai"
         if sys.version_info.minor >= 9:
             from zoneinfo import ZoneInfo
@@ -152,38 +143,24 @@ def _(context):
         assert row.values()[0] == exp, f"datetime(session level tz): {row.values()}"
         context.conn.exec("set timezone='UTC'")
 
-        if DB_VERSION >= (1, 2, 839):
-            row = context.conn.query_row(
-                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789')"
-            )
-            assert row.values()[0] == exp, f"datetime(query level tz): {row.values()}"
+        row = context.conn.query_row(
+            f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789')"
+        )
+        assert row.values()[0] == exp, f"datetime(query level tz): {row.values()}"
 
-            row = context.conn.query_row(
-                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789'), 10"
-            )
-            assert row.values()[0] == exp, (
-                f"datetime in Tuple: {row.values()[0]} != {exp}"
-            )
+        row = context.conn.query_row(
+            f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789'), 10"
+        )
+        assert row.values()[0] == exp, f"datetime in Tuple: {row.values()[0]} != {exp}"
 
         tz_expected = timezone(timedelta(hours=6))
         row = context.conn.query_row(
             f"settings(timezone='{tz}') select to_timestamp_tz('2024-04-16 12:34:56.789 +0600')"
         )
         exp = datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=tz_expected)
-        exp_bug = datetime(2024, 4, 16, 18, 34, 56, 789000, tzinfo=tz_expected)
-        if (
-            DB_VERSION >= (1, 2, 840)
-            and not os.getenv("QUERY_RESULT_FORMAT") == "arrow"
-        ) or (
-            DB_VERSION >= (1, 2, 844) and os.getenv("QUERY_RESULT_FORMAT") == "arrow"
-        ):
-            assert row.values()[0] == exp, f"timestamp_tz: {row.values()[0]} {exp}"
-        else:
-            assert row.values()[0] == exp_bug, (
-                f"timestamp_tz: {row.values()[0]} {exp_bug}"
-            )
+        assert row.values()[0] == exp, f"timestamp_tz: {row.values()[0]} {exp}"
 
-    if DRIVER_VERSION > (0, 33, 7) and DB_VERSION > (1, 2, 894):
+    if DRIVER_VERSION > (0, 33, 7):
         row = context.conn.query_row("SELECT st_point(60,37)")
         assert row.values()[0] == POINT_GEOJSON, f"geography: {row.values()}"
         row = context.conn.query_row(
@@ -310,7 +287,7 @@ def _(context):
 
 
 def test_load_file(context, load_method):
-    if DRIVER_VERSION >= (0, 28, 3) and DB_VERSION >= (1, 2, 792):
+    if DRIVER_VERSION >= (0, 28, 3):
         context.conn.exec("CREATE OR REPLACE DATABASE db1")
         context.conn.exec("use db1")
     context.conn.exec(
@@ -338,8 +315,6 @@ def test_load_file(context, load_method):
     rows = context.conn.query_iter("SELECT * FROM test1")
     ret = [row.values() for row in rows]
 
-    quoted_empty = "" if DB_VERSION >= (1, 2, 866) else None
-
     expected = [
         (
             -1,
@@ -355,7 +330,7 @@ def test_load_file(context, load_method):
             2,
             2.0,
             '"',
-            quoted_empty,
+            "",
             date(2012, 5, 31),
             datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
         ),
@@ -496,7 +471,7 @@ def _(context):
 
 @then("Query should not timeout")
 def _(context):
-    if not (DRIVER_VERSION > (0, 30, 3) and DB_VERSION >= (1, 2, 709)):
+    if DRIVER_VERSION <= (0, 30, 3):
         print("SKIP")
         return
 

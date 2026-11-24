@@ -22,13 +22,6 @@ const { Given, When, Then } = require("@cucumber/cucumber");
 const util = require("util");
 const sleep = util.promisify(setTimeout);
 
-let DB_VERSION = process.env.DB_VERSION;
-if (DB_VERSION) {
-  DB_VERSION = DB_VERSION.split(".").map(Number);
-} else {
-  DB_VERSION = [100, 0, 0];
-}
-
 let DRIVER_VERSION = process.env.DRIVER_VERSION;
 if (DRIVER_VERSION) {
   DRIVER_VERSION = DRIVER_VERSION.split(".").map(Number);
@@ -225,13 +218,7 @@ Then("Select types should be expected native types", { timeout: 60000 }, async f
     ]);
   }
 
-  // TimestampTz
-  if (!(DRIVER_VERSION > [0, 30, 3] && DB_VERSION >= [1, 2, 836])) {
-    const row = await this.conn.queryRow(`SELECT to_datetime_tz('2024-04-16 12:34:56.789 +0800'))`);
-    assert.deepEqual(row.values(), [new Date("2024-04-16 04:34:56.789Z")]);
-  }
-
-  if (DRIVER_VERSION > [0, 31, 0] && DB_VERSION > [1, 2, 894]) {
+  if (DRIVER_VERSION > [0, 31, 0]) {
     {
       const row = await this.conn.queryRow("SELECT st_point(60,37)");
       assert.deepEqual(row.values(), [POINT_GEOJSON]);
@@ -470,7 +457,7 @@ Then("killQuery should return error for non-existent query ID", async function (
 });
 
 Then("Query should not timeout", { timeout: 30000 }, async function () {
-  if (!(DRIVER_VERSION > [0, 30, 3] && DB_VERSION >= [1, 2, 709])) {
+  if (!(DRIVER_VERSION > [0, 30, 3])) {
     console.log("SKIP");
     return;
   }

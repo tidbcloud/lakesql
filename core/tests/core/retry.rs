@@ -29,6 +29,7 @@ struct RecordedRequest {
     path: String,
     authorization: Option<String>,
     query_id: Option<String>,
+    accept: Option<String>,
 }
 
 type ResponseHandler = dyn Fn(usize, &RecordedRequest) -> (u16, &'static str, String) + Send + Sync;
@@ -194,8 +195,9 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
     let path = request_line_parts.next().unwrap_or_default().to_string();
 
     let mut content_length = 0usize;
-    let mut authorization = None::<String>;
-    let mut query_id = None::<String>;
+    let mut authorization = None;
+    let mut query_id = None;
+    let mut accept = None;
 
     for line in lines {
         if line.is_empty() {
@@ -206,13 +208,12 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         };
         let key = k.trim().to_ascii_lowercase();
         let value = v.trim().to_string();
-        if key == "content-length" {
-            content_length = value.parse::<usize>().unwrap_or(0);
-        }
-        if key == "authorization" {
-            authorization = Some(value);
-        } else if key == "x-databend-query-id" {
-            query_id = Some(value);
+        match key.as_str() {
+            "content-length" => content_length = value.parse::<usize>().unwrap_or(0),
+            "authorization" => authorization = Some(value),
+            "x-databend-query-id" => query_id = Some(value),
+            "accept" => accept = Some(value),
+            _ => {}
         }
     }
 
@@ -227,6 +228,7 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         path,
         authorization,
         query_id,
+        accept,
     })
 }
 
@@ -240,6 +242,7 @@ async fn write_response(
     let reason = match status {
         200 => "OK",
         401 => "Unauthorized",
+        404 => "Not Found",
         503 => "Service Unavailable",
         _ => "Unknown",
     };
@@ -439,6 +442,51 @@ async fn query_id_survives_connect_failure_after_a_503() {
 }
 
 #[tokio::test]
+async fn login_not_found_is_an_error() {
+    let handler: Arc<ResponseHandler> = Arc::new(|_, _| (404, "text/plain", "not found".into()));
+    let (port, requests, server) = spawn_test_server(handler);
+    let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off");
+    let err = APIClient::new(&dsn, None)
+        .await
+        .err()
+        .expect("a missing login endpoint should fail the connection");
+    assert_eq!(err.status_code().unwrap().as_u16(), 404);
+    assert!(matches!(
+        err,
+        Error::WithContext {
+            request_kind: Some(lake_client::RequestKind::Login),
+            ..
+        }
+    ));
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    server.abort();
+}
+
+#[tokio::test]
+async fn arrow_is_available_with_login_disabled() {
+    let handler: Arc<ResponseHandler> =
+        Arc::new(|_, _| (200, "application/json", ok_query_response("42")));
+    let (port, requests, server) = spawn_test_server(handler);
+    let dsn = build_dsn(port, 1, "presign=off&query_result_format=arrow");
+    let client = APIClient::new(&dsn, None).await.unwrap();
+    assert!(client.capability().streaming_load);
+    assert!(client.capability().server_side_params);
+    client.query_all("select 42", None).await.unwrap();
+    client
+        .query_all_inner("select 42", true, None)
+        .await
+        .unwrap();
+
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|req| req.path == "/v1/query"));
+    let arrow = Some("application/vnd.apache.arrow.stream");
+    assert_eq!(requests[0].accept.as_deref(), arrow);
+    assert_ne!(requests[1].accept.as_deref(), arrow);
+    server.abort();
+}
+
+#[tokio::test]
 async fn retry_401_reapplies_refreshed_session_token() {
     for wrapped in [false, true] {
         check_refreshed_session_token(wrapped).await;
@@ -452,7 +500,7 @@ async fn check_refreshed_session_token(wrapped: bool) {
     let handler: Arc<ResponseHandler> = Arc::new(move |idx, req| {
         let body = match (idx, req.path.as_str(), req.authorization.as_deref()) {
             (0, "/v1/session/login", _) => serde_json::json!({
-                "version": "1.2.900",
+                "version": "1.2.925-nightly",
                 "tokens": {"session_token": old, "refresh_token": refresh}
             })
             .to_string(),
@@ -480,6 +528,9 @@ async fn check_refreshed_session_token(wrapped: bool) {
     let (port, requests, server) = spawn_test_server(handler);
     let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_delay_secs=0&retry_count=1");
     let client = APIClient::new(&dsn, None).await.unwrap();
+    assert!(client.capability().streaming_load);
+    assert!(client.capability().arrow_data);
+    assert!(client.capability().server_side_params);
     let response = client.query_all("select 42", None).await.unwrap();
     assert_eq!(response.data, vec![vec![Some("42".to_string())]]);
     client.close().await;

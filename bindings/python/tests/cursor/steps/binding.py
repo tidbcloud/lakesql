@@ -26,12 +26,6 @@ import tidbcloudlake_driver
 
 NOW = int(time.time())
 
-DB_VERSION = os.getenv("DB_VERSION")
-if DB_VERSION is not None:
-    DB_VERSION = tuple(map(int, DB_VERSION.split(".")))
-else:
-    DB_VERSION = (100, 0, 0)
-
 DRIVER_VERSION = os.getenv("DRIVER_VERSION")
 if DRIVER_VERSION is not None:
     DRIVER_VERSION = tuple(map(int, DRIVER_VERSION.split(".")))
@@ -164,7 +158,7 @@ def _(context):
         )
         assert row.values() == expected, f"Tuple: {row.values()}"
 
-    if DRIVER_VERSION > (0, 31, 0) and DB_VERSION > (1, 2, 894):
+    if DRIVER_VERSION > (0, 31, 0):
         context.cursor.execute("SELECT st_point(60,37)")
         row = context.cursor.fetchone()
         assert row.values()[0] == POINT_GEOJSON, f"geography: {row.values()}"
@@ -412,7 +406,7 @@ def _(context):
 
 @then("Query should not timeout")
 def _(context):
-    if not (DRIVER_VERSION > (0, 30, 3) and DB_VERSION >= (1, 2, 709)):
+    if DRIVER_VERSION <= (0, 30, 3):
         print("SKIP")
         return
 
