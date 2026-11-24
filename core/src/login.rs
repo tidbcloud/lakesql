@@ -70,6 +70,7 @@ pub struct RefreshSessionTokenRequest {
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum RefreshResponse {
-    Ok(SessionTokenInfo),
+    Wrapped { tokens: SessionTokenInfo },
+    Flat(SessionTokenInfo),
     Err { error: ErrorCode },
 }
