@@ -112,8 +112,16 @@ row = await context.conn.query_row("SELECT ?, ?, ?, ?", params=(3, False, 4, "55
 
 ### Query ID tracking and query management
 
+On a REST connection, `conn.last_query_id()` can return the generated ID while
+submission is still in progress. A decoded first response can replace that ID,
+even on a SQL error. If the driver knows the request was never sent, it restores
+the previous ID unless another query has already updated it.
+
+The value is connection-wide and can change during concurrent queries. It is
+`None` before the first query and always `None` for FlightSQL.
+
 ```python
-# Get the last executed query ID
+# Get the latest query ID, including failed submissions
 query_id = conn.last_query_id()
 print(f"Last query ID: {query_id}")
 

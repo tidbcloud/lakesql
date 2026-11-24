@@ -19,6 +19,7 @@ use std::time::Duration;
 use lake_client::{APIClient, Error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -27,6 +28,7 @@ struct RecordedRequest {
     method: String,
     path: String,
     authorization: Option<String>,
+    query_id: Option<String>,
 }
 
 type ResponseHandler = dyn Fn(usize, &RecordedRequest) -> (u16, &'static str, String) + Send + Sync;
@@ -193,6 +195,7 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
 
     let mut content_length = 0usize;
     let mut authorization = None::<String>;
+    let mut query_id = None::<String>;
 
     for line in lines {
         if line.is_empty() {
@@ -208,6 +211,8 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         }
         if key == "authorization" {
             authorization = Some(value);
+        } else if key == "x-databend-query-id" {
+            query_id = Some(value);
         }
     }
 
@@ -221,6 +226,7 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         method,
         path,
         authorization,
+        query_id,
     })
 }
 
@@ -300,7 +306,136 @@ async fn query_start_does_not_retry_a_body_timeout() {
     let requests = requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].path, "/v1/query");
+    assert_eq!(client.last_query_id(), requests[0].query_id);
     server.abort();
+}
+
+#[tokio::test]
+async fn query_id_is_visible_before_first_response() {
+    for outcome in ["success", "sql-error", "invalid-response", "abort"] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (received, request) = oneshot::channel();
+        let (release, gate) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            received
+                .send(read_request(&mut stream).await.unwrap())
+                .unwrap();
+            if gate.await.is_err() {
+                return;
+            }
+            let mut body: serde_json::Value =
+                serde_json::from_str(&ok_query_response("42")).unwrap();
+            if outcome == "sql-error" {
+                body["data"] = serde_json::json!([]);
+                body["state"] = serde_json::json!("Failed");
+                body["error"] = serde_json::json!({"code": 1005, "message": "invalid SQL"});
+            }
+            let body = if outcome == "invalid-response" {
+                "not JSON".to_owned()
+            } else {
+                body.to_string()
+            };
+            write_response(&mut stream, 200, "application/json", &body, Duration::ZERO)
+                .await
+                .unwrap();
+        });
+        let client = APIClient::new(&build_dsn(port, 1, "presign=off"), None)
+            .await
+            .unwrap();
+        assert_eq!(client.last_query_id(), None);
+        let query_client = client.clone();
+        let query = tokio::spawn(async move { query_client.query_all("select 42", None).await });
+        let request = tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("query submission did not reach the mock server")
+            .unwrap();
+        assert_eq!(request.path, "/v1/query");
+        let submitted_id = request.query_id.expect("missing submitted query ID");
+        assert_eq!(
+            client.last_query_id().as_deref(),
+            Some(submitted_id.as_str())
+        );
+
+        if outcome == "abort" {
+            query.abort();
+            assert!(matches!(query.await, Err(err) if err.is_cancelled()));
+            assert_eq!(
+                client.last_query_id().as_deref(),
+                Some(submitted_id.as_str())
+            );
+            drop(release);
+        } else {
+            release.send(()).unwrap();
+            let result = query.await.unwrap();
+            match outcome {
+                "success" => assert!(result.is_ok()),
+                "sql-error" => {
+                    assert!(matches!(result, Err(Error::QueryFailed(code)) if code.code == 1005))
+                }
+                "invalid-response" => assert!(matches!(result, Err(Error::Decode(_)))),
+                _ => unreachable!(),
+            }
+            let expected = if outcome == "invalid-response" {
+                submitted_id.as_str()
+            } else {
+                "query-id"
+            };
+            assert_eq!(client.last_query_id().as_deref(), Some(expected));
+        }
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn query_id_rolls_back_when_no_attempt_was_sent() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    // Try both an HTTP request construction error and a refused connection.
+    for extra in ["presign=off&warehouse=bad%0Aname", "presign=off"] {
+        let client = APIClient::new(&build_dsn(port, 2, extra), None)
+            .await
+            .unwrap();
+        client.set_last_query_id(Some("previous-id".to_owned()));
+        assert!(client.query_all("select 42", None).await.is_err());
+        assert_eq!(client.last_query_id().as_deref(), Some("previous-id"));
+    }
+}
+
+#[tokio::test]
+async fn query_id_survives_connect_failure_after_a_503() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_request(&mut stream).await.unwrap();
+        drop(listener); // The retry cannot connect after this response.
+        write_response(
+            &mut stream,
+            503,
+            "text/plain",
+            "unavailable",
+            Duration::ZERO,
+        )
+        .await
+        .unwrap();
+        request.query_id.unwrap()
+    });
+    let client = APIClient::new(&build_dsn(port, 2, "presign=off"), None)
+        .await
+        .unwrap();
+    client.set_last_query_id(Some("previous-id".to_owned()));
+    assert!(matches!(
+        client.query_all("select 42", None).await,
+        Err(Error::WithContext {
+            retry_times: Some(1),
+            ..
+        })
+    ));
+    assert_eq!(client.last_query_id(), Some(server.await.unwrap()));
 }
 
 #[tokio::test]
