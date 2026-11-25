@@ -65,6 +65,17 @@ await finished(stream);
 await conn.close();
 ```
 
+### Query ID tracking
+
+On a REST connection, `conn.lastQueryId()` is synchronous. Once the driver
+starts submitting a query, it returns the generated ID without waiting for the
+first response. A decoded first response can replace that ID, even when the SQL
+fails. If the driver knows the request was never sent, it restores the previous
+ID unless another query has already updated it.
+
+The value is shared by all queries on the connection. A concurrent query can
+change it. It is `null` before the first query and always `null` for FlightSQL.
+
 ## Type Mapping
 
 [TiDB Cloud Lake Types](https://docs.tidbcloud.com/)
