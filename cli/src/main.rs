@@ -15,6 +15,8 @@
 #![allow(clippy::upper_case_acronyms)]
 
 mod args;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod argv_mask;
 mod ast;
 mod config;
 mod display;
@@ -193,17 +195,21 @@ where
     Ok((s[..pos].parse()?, s[pos + 1..].parse()?))
 }
 
-#[tokio::main]
-pub async fn main() -> Result<()> {
-    let config = Config::load();
-
+fn main() -> Result<()> {
     let args = Args::parse();
-    let mut cmd = Args::command();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    argv_mask::mask_credentials(Args::command());
+
     if args.help {
-        cmd.print_help()?;
+        Args::command().print_help()?;
         return Ok(());
     }
+    run(args)
+}
 
+#[tokio::main]
+async fn run(args: Args) -> Result<()> {
+    let config = Config::load();
     let mut conn_args = match args.dsn {
         Some(ref dsn) => {
             if args.host.is_some() {
