@@ -50,16 +50,9 @@ runs:
         cargo fmt --all -- --check
 
     - name: Install Check Tools
-      env:
-        GH_TOKEN: ${{ github.token }}
-      shell: bash
-      run: |
-        cargo install cargo-quickinstall
-        cargo quickinstall cargo-binstall
-        cargo binstall -y cargo-machete
-        cargo binstall -y cargo-deny
-        cargo binstall -y cargo-xwin
-        cargo binstall -y sccache
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-machete,cargo-deny
 
     - name: Machete
       shell: bash

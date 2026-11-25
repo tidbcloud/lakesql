@@ -14,6 +14,82 @@
 
 use databend_common_ast::parser::token::{TokenKind, Tokenizer};
 
+#[derive(Default, PartialEq)]
+enum TaskBlockState {
+    #[default]
+    Start,
+    SeenCreateAlter,
+    SeenTask,
+    InBlock,
+    SeenBlockEnd,
+    Other,
+}
+
+/// Keep CREATE/ALTER TASK script bodies together without treating a plain
+/// transaction BEGIN or a CASE expression's END as a script boundary.
+#[derive(Default)]
+struct TaskBlockTracker {
+    state: TaskBlockState,
+    paren_depth: u32,
+    previous: Option<TokenKind>,
+}
+
+impl TaskBlockTracker {
+    fn feed(&mut self, kind: TokenKind, is_terminator: bool) {
+        self.state = match self.state {
+            TaskBlockState::Start => match kind {
+                TokenKind::CREATE | TokenKind::ALTER => TaskBlockState::SeenCreateAlter,
+                _ => TaskBlockState::Other,
+            },
+            TaskBlockState::SeenCreateAlter => match kind {
+                TokenKind::OR | TokenKind::REPLACE => TaskBlockState::SeenCreateAlter,
+                TokenKind::TASK => TaskBlockState::SeenTask,
+                _ => TaskBlockState::Other,
+            },
+            TaskBlockState::SeenTask => {
+                // Ignore AS inside expressions such as WHEN CAST(... AS BOOLEAN).
+                if self.previous == Some(TokenKind::AS) && self.paren_depth == 0 {
+                    if kind == TokenKind::BEGIN {
+                        TaskBlockState::InBlock
+                    } else {
+                        TaskBlockState::Other
+                    }
+                } else {
+                    TaskBlockState::SeenTask
+                }
+            }
+            TaskBlockState::InBlock => {
+                if kind == TokenKind::END && self.previous == Some(TokenKind::SemiColon) {
+                    TaskBlockState::SeenBlockEnd
+                } else {
+                    TaskBlockState::InBlock
+                }
+            }
+            TaskBlockState::SeenBlockEnd => {
+                // Accept a delimiter after the bare END, including END; followed
+                // by a custom delimiter, or END followed by REPL's \G.
+                if is_terminator || matches!(kind, TokenKind::SemiColon | TokenKind::Backslash) {
+                    TaskBlockState::SeenBlockEnd
+                } else {
+                    TaskBlockState::InBlock
+                }
+            }
+            TaskBlockState::Other => TaskBlockState::Other,
+        };
+
+        match kind {
+            TokenKind::LParen => self.paren_depth += 1,
+            TokenKind::RParen => self.paren_depth = self.paren_depth.saturating_sub(1),
+            _ => {}
+        }
+        self.previous = Some(kind);
+    }
+
+    fn in_block(&self) -> bool {
+        self.state == TaskBlockState::InBlock
+    }
+}
+
 /// SQL parser utility for splitting SQL text into individual statements
 pub struct SqlParser {
     delimiter: char,
@@ -185,30 +261,31 @@ impl SqlParser {
         let mut statements = Vec::new();
         let mut remaining_query = to_parse.to_string();
         let mut err = String::new();
+        let delimiter = self.delimiter.to_string();
 
         'Parser: loop {
             let mut is_valid = true;
             let tokenizer = Tokenizer::new(&remaining_query);
             let mut previous_token_backslash = false;
+            let mut task_block = TaskBlockTracker::default();
 
             for token in tokenizer {
                 match token {
                     Ok(token) => {
                         // SQL end with `;` or `\G` in repl
-                        let is_end_query = token.text() == self.delimiter.to_string();
+                        let is_end_query = token.text() == delimiter;
                         let is_slash_g = self.is_repl
                             && (previous_token_backslash
                                 && token.kind == TokenKind::Ident
                                 && token.text() == "G")
                             || (token.text().ends_with("\\G"));
+                        let is_terminator = is_end_query || is_slash_g;
+                        task_block.feed(token.kind, is_terminator);
 
-                        if is_end_query || is_slash_g {
+                        if is_terminator && !task_block.in_block() {
                             // Extract the statement and continue with remaining text
                             let (sql, remain) = remaining_query.split_at(token.span.end as usize);
-                            if is_valid
-                                && !sql.is_empty()
-                                && sql.trim() != self.delimiter.to_string()
-                            {
+                            if is_valid && !sql.is_empty() && sql.trim() != delimiter {
                                 let sql = sql.trim_end_matches(self.delimiter);
                                 statements.push(sql.trim().to_string());
                             }
@@ -245,4 +322,104 @@ struct ParseResult {
     statements: Vec<String>,
     remaining: String,
     err: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_script_followed_by_sql() {
+        let parser = SqlParser::new(';', true, false);
+        for prefix in [
+            "CREATE TASK IF NOT EXISTS t SCHEDULE = '1 MINUTE'",
+            "CREATE OR REPLACE TASK t WHEN CAST(flag AS BOOLEAN)",
+            "ALTER TASK t MODIFY",
+        ] {
+            let task = format!("{prefix} AS BEGIN SELECT 1; SELECT 2; END");
+            let parsed = parser.parse_statements(&format!("{task}; SELECT 3;"));
+            assert!(parsed.err.is_empty(), "{}", parsed.err);
+            assert_eq!(parsed.statements, [task, "SELECT 3".to_owned()]);
+            assert!(parsed.remaining.is_empty());
+        }
+    }
+
+    #[test]
+    fn task_script_accumulates_lines_until_end() {
+        let parser = SqlParser::new(';', true, true);
+        let mut buf = String::new();
+        let mut err = String::new();
+        let prefix = ["CREATE TASK t AS", "BEGIN", "  SELECT 1;", "  SELECT 2;"];
+        for line in prefix {
+            assert!(parser.parse_line(line, &mut buf, &mut err).is_empty());
+            assert!(err.is_empty(), "{err}");
+        }
+        let stmts = parser.parse_line("END;", &mut buf, &mut err);
+        assert_eq!(stmts, [format!("{}\nEND", prefix.join("\n"))]);
+        assert!(buf.is_empty());
+        assert!(err.is_empty(), "{err}");
+    }
+
+    #[test]
+    fn case_end_and_transaction_begin_do_not_close_task_script() {
+        let parser = SqlParser::new(';', true, false);
+        let task =
+            "CREATE TASK t AS BEGIN BEGIN; SELECT CASE WHEN flag THEN 1 ELSE 0 END; COMMIT; END";
+        let parsed = parser.parse_statements(&format!("{task};"));
+        assert!(parsed.err.is_empty(), "{}", parsed.err);
+        assert_eq!(parsed.statements, [task]);
+        assert!(parsed.remaining.is_empty());
+    }
+
+    #[test]
+    fn task_script_without_terminator_stays_in_buffer() {
+        let parser = SqlParser::new(';', true, false);
+        let task = "CREATE TASK t AS BEGIN SELECT 1; SELECT 2; END";
+        let parsed = parser.parse_statements(task);
+        assert!(parsed.err.is_empty(), "{}", parsed.err);
+        assert!(parsed.statements.is_empty());
+        // Batch execution already submits the remaining text at EOF.
+        assert_eq!(parsed.remaining, task);
+    }
+
+    #[test]
+    fn regular_statements_and_single_statement_tasks_split_as_before() {
+        let parser = SqlParser::new(';', true, false);
+        let parsed = parser.parse_statements(
+            "BEGIN; SELECT 1; COMMIT; BEGIN TRANSACTION; CREATE TASK t AS SELECT 1 AS begin; SELECT 2;",
+        );
+        assert!(parsed.err.is_empty(), "{}", parsed.err);
+        assert_eq!(
+            parsed.statements,
+            [
+                "BEGIN",
+                "SELECT 1",
+                "COMMIT",
+                "BEGIN TRANSACTION",
+                "CREATE TASK t AS SELECT 1 AS begin",
+                "SELECT 2",
+            ]
+        );
+        assert!(parsed.remaining.is_empty());
+    }
+
+    #[test]
+    fn task_script_supports_custom_delimiter() {
+        let parser = SqlParser::new('|', true, false);
+        let task = "CREATE TASK t AS BEGIN SELECT 1 | 2; SELECT 3; END;";
+        let parsed = parser.parse_statements(&format!("{task}| SELECT 4|"));
+        assert!(parsed.err.is_empty(), "{}", parsed.err);
+        assert_eq!(parsed.statements, [task, "SELECT 4"]);
+        assert!(parsed.remaining.is_empty());
+    }
+
+    #[test]
+    fn task_script_supports_vertical_output_terminator() {
+        let parser = SqlParser::new(';', true, true);
+        let task = r"CREATE TASK t AS BEGIN SELECT 1; SELECT 2; END\G";
+        let parsed = parser.parse_statements(&format!("{task} SELECT 3;"));
+        assert!(parsed.err.is_empty(), "{}", parsed.err);
+        assert_eq!(parsed.statements, [task, "SELECT 3"]);
+        assert!(parsed.remaining.is_empty());
+    }
 }
