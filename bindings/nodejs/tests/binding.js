@@ -457,11 +457,10 @@ Then("killQuery should return error for non-existent query ID", async function (
 });
 
 Then("Query should not timeout", { timeout: 30000 }, async function () {
-  const page_size = 10000;
+  const rowsBeforeSleep = 10000;
 
   const parsedUrl = new URL(dsn);
   parsedUrl.searchParams.set("wait_time_secs", "3");
-  parsedUrl.searchParams.set("max_rows_per_page", page_size.toString());
   // Clear database path for heartbeat connection
   parsedUrl.pathname = "/";
   const heartbeatDsn = parsedUrl.toString();
@@ -475,7 +474,7 @@ Then("Query should not timeout", { timeout: 30000 }, async function () {
   const sql = "select * from numbers(1000000000)";
   const rows = await conn.queryIter(sql);
 
-  for (let i = 0; i < page_size; i++) {
+  for (let i = 0; i < rowsBeforeSleep; i++) {
     const row = await rows.next();
     assert.notEqual(row, null, "Row should not be null before sleep");
   }
@@ -484,7 +483,7 @@ Then("Query should not timeout", { timeout: 30000 }, async function () {
   await sleep(10000);
   console.log("after sleep");
 
-  for (let i = 0; i < page_size * 10; i++) {
+  for (let i = 0; i < rowsBeforeSleep * 10; i++) {
     const row = await rows.next();
     assert.notEqual(row, null, `Row should not be null after sleep ${i.toString()} ${row}`);
   }

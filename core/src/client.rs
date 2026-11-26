@@ -191,8 +191,6 @@ pub struct APIClient {
     server_version: Option<Version>,
 
     wait_time_secs: Option<i64>,
-    max_rows_in_buffer: Option<i64>,
-    max_rows_per_page: Option<i64>,
 
     connect_timeout: Duration,
     page_request_timeout: Duration,
@@ -393,11 +391,10 @@ impl APIClient {
                 "wait_time_secs" => {
                     client.wait_time_secs = Some(v.parse()?);
                 }
-                "max_rows_in_buffer" => {
-                    client.max_rows_in_buffer = Some(v.parse()?);
-                }
-                "max_rows_per_page" => {
-                    client.max_rows_per_page = Some(v.parse()?);
+                "max_rows_in_buffer" | "max_rows_per_page" => {
+                    return Err(Error::BadArgument(format!(
+                        "DSN option {k} has been removed; omit it to use server defaults"
+                    )));
                 }
                 "connect_timeout" => client.connect_timeout = Duration::from_secs(v.parse()?),
                 "page_request_timeout_secs" => {
@@ -476,7 +473,13 @@ impl APIClient {
                         }
                     }
                 }
-                "body_format" | "query_result_format" => {
+                "body_format" => {
+                    return Err(Error::BadArgument(
+                        "DSN option body_format has been removed; use query_result_format instead"
+                            .into(),
+                    ));
+                }
+                "query_result_format" => {
                     let v = v.to_string().to_lowercase();
                     match v.as_str() {
                         "json" | "arrow" => client.query_result_format = v.to_string(),
@@ -751,7 +754,10 @@ impl APIClient {
         let session_state = self.session_state();
         let need_sticky = session_state.need_sticky.unwrap_or(false);
         let mut req = QueryRequest::new(sql)
-            .with_pagination(self.make_pagination())
+            .with_pagination(
+                self.wait_time_secs
+                    .map(|wait_time_secs| PaginationConfig { wait_time_secs }),
+            )
             .with_session(Some(session_state))
             .with_stage_attachment(stage_attachment_config)
             .with_params(params);
@@ -963,30 +969,6 @@ impl APIClient {
 
     fn session_state(&self) -> SessionState {
         self.session_state.lock().clone()
-    }
-
-    fn make_pagination(&self) -> Option<PaginationConfig> {
-        if self.wait_time_secs.is_none()
-            && self.max_rows_in_buffer.is_none()
-            && self.max_rows_per_page.is_none()
-        {
-            return None;
-        }
-        let mut pagination = PaginationConfig {
-            wait_time_secs: None,
-            max_rows_in_buffer: None,
-            max_rows_per_page: None,
-        };
-        if let Some(wait_time_secs) = self.wait_time_secs {
-            pagination.wait_time_secs = Some(wait_time_secs);
-        }
-        if let Some(max_rows_in_buffer) = self.max_rows_in_buffer {
-            pagination.max_rows_in_buffer = Some(max_rows_in_buffer);
-        }
-        if let Some(max_rows_per_page) = self.max_rows_per_page {
-            pagination.max_rows_per_page = Some(max_rows_per_page);
-        }
-        Some(pagination)
     }
 
     fn make_headers(&self, query_id: Option<&str>) -> Result<HeaderMap> {
@@ -1651,8 +1633,6 @@ impl Default for APIClient {
             auth: Arc::new(BasicAuth::new(DEFAULT_USERNAME, "")) as Arc<dyn Auth>,
             session_state: Mutex::new(SessionState::default()),
             wait_time_secs: None,
-            max_rows_in_buffer: None,
-            max_rows_per_page: None,
             connect_timeout: Duration::from_secs(10),
             page_request_timeout: Duration::from_secs(300),
             tls_ca_file: None,
@@ -1718,7 +1698,7 @@ mod test {
 
     #[tokio::test]
     async fn parse_dsn() -> Result<()> {
-        let dsn = "lake://username:password@app.lake.tidbcloud.com/test?wait_time_secs=10&max_rows_in_buffer=5000000&max_rows_per_page=10000&warehouse=wh&sslmode=disable";
+        let dsn = "lake://username:password@app.lake.tidbcloud.com/test?wait_time_secs=10&query_result_format=ArRoW&warehouse=wh&sslmode=disable";
         let client = APIClient::from_dsn(dsn).await?;
         assert_eq!(client.host, "app.lake.tidbcloud.com");
         assert_eq!(
@@ -1726,14 +1706,29 @@ mod test {
             Url::parse("http://app.lake.tidbcloud.com:80")?
         );
         assert_eq!(client.wait_time_secs, Some(10));
-        assert_eq!(client.max_rows_in_buffer, Some(5000000));
-        assert_eq!(client.max_rows_per_page, Some(10000));
+        assert_eq!(client.query_result_format, "arrow");
         assert_eq!(client.tenant, None);
         assert_eq!(
             *client.warehouse.try_lock().unwrap(),
             Some("wh".to_string())
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn parse_dsn_rejects_removed_options() {
+        for (option, value, hint) in [
+            ("max_rows_in_buffer", "5000000", "use server defaults"),
+            ("max_rows_per_page", "10000", "use server defaults"),
+            ("body_format", "arrow", "use query_result_format instead"),
+        ] {
+            let dsn = format!("lake://localhost/?{option}={value}");
+            let result = APIClient::from_dsn(&dsn).await;
+            assert!(
+                matches!(result, Err(Error::BadArgument(message)) if message.contains(option) && message.contains(hint)),
+                "expected a DSN error with migration guidance for {option}"
+            );
+        }
     }
 
     #[tokio::test]

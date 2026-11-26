@@ -34,12 +34,7 @@ pub struct QueryRequest<'a> {
 
 #[derive(Serialize, Debug)]
 pub struct PaginationConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wait_time_secs: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_rows_in_buffer: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_rows_per_page: Option<i64>,
+    pub wait_time_secs: i64,
 }
 
 #[derive(Serialize, Debug)]
@@ -103,11 +98,7 @@ mod test {
         session.set_database("default");
         let req = QueryRequest::new("select 1")
             .with_session(Some(session))
-            .with_pagination(Some(PaginationConfig {
-                wait_time_secs: Some(1),
-                max_rows_in_buffer: Some(1),
-                max_rows_per_page: Some(1),
-            }))
+            .with_pagination(Some(PaginationConfig { wait_time_secs: 1 }))
             .with_stage_attachment(Some(StageAttachmentConfig {
                 location: "@~/my_location",
                 file_format_options: None,
@@ -115,7 +106,7 @@ mod test {
             }));
         assert_eq!(
             serde_json::to_string(&req)?,
-            r#"{"session":{"database":"default"},"sql":"select 1","pagination":{"wait_time_secs":1,"max_rows_in_buffer":1,"max_rows_per_page":1},"stage_attachment":{"location":"@~/my_location"}}"#
+            r#"{"session":{"database":"default"},"sql":"select 1","pagination":{"wait_time_secs":1},"stage_attachment":{"location":"@~/my_location"}}"#
         );
         Ok(())
     }
