@@ -71,6 +71,5 @@ pub struct RefreshSessionTokenRequest {
 #[serde(untagged)]
 pub enum RefreshResponse {
     Wrapped { tokens: SessionTokenInfo },
-    Flat(SessionTokenInfo),
     Err { error: ErrorCode },
 }

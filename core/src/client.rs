@@ -1351,7 +1351,7 @@ impl APIClient {
             RefreshResponse::Err { error } => {
                 Err(Error::AuthFailure(Self::auth_error_code(error.code)))
             }
-            RefreshResponse::Wrapped { tokens: info } | RefreshResponse::Flat(info) => {
+            RefreshResponse::Wrapped { tokens: info } => {
                 *self_login_info.lock() = (info, Instant::now());
                 Ok(())
             }

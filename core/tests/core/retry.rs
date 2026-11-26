@@ -486,12 +486,6 @@ async fn arrow_is_available_with_login_disabled() {
 
 #[tokio::test]
 async fn retry_401_reapplies_refreshed_session_token() {
-    for wrapped in [false, true] {
-        check_refreshed_session_token(wrapped).await;
-    }
-}
-
-async fn check_refreshed_session_token(wrapped: bool) {
     let old = "old-test-token";
     let new = "new-test-token";
     let refresh = "test-refresh-token";
@@ -509,14 +503,10 @@ async fn check_refreshed_session_token(wrapped: bool) {
                     logic_error_json_body(5101, "session token expired"),
                 );
             }
-            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => {
-                let tokens = serde_json::json!({"session_token": new, "refresh_token": refresh});
-                if wrapped {
-                    serde_json::json!({"tokens": tokens}).to_string()
-                } else {
-                    tokens.to_string()
-                }
-            }
+            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => serde_json::json!({
+                "tokens": {"session_token": new, "refresh_token": refresh}
+            })
+            .to_string(),
             (3, "/v1/query", Some("Bearer new-test-token")) => ok_query_response("42"),
             (4, "/v1/session/logout", Some("Bearer new-test-token")) => "{}".to_string(),
             _ => panic!("unexpected mock request: {req:?}"),
@@ -757,7 +747,19 @@ async fn login_does_not_expose_auth_response_text() {
 
 #[tokio::test]
 async fn refresh_does_not_expose_auth_response_text() {
-    for (status, expected, body) in rejected_auth_responses() {
+    let legacy_flat_response = (
+        200,
+        "JSON response",
+        serde_json::json!({
+            "session_token": AUTH_RESPONSE_CANARY,
+            "refresh_token": AUTH_RESPONSE_CANARY,
+        })
+        .to_string(),
+    );
+    for (status, expected, body) in rejected_auth_responses()
+        .into_iter()
+        .chain([legacy_flat_response])
+    {
         let handler: Arc<ResponseHandler> = Arc::new(move |_, req| match req.path.as_str() {
             "/v1/session/login" => (
                 200,
