@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::types::{ConnectionInfo, DriverError, Row, RowIterator, ServerStats, VERSION};
-use crate::utils::{options_as_ref, to_sql_params, wait_for_future};
+use crate::utils::{to_sql_params, wait_for_future};
 use lake_driver::{LoadMethod, SchemaRef};
 use pyo3::exceptions::{PyAttributeError, PyException, PyStopIteration};
 use pyo3::types::{PyList, PyTuple};
@@ -194,34 +193,22 @@ impl BlockingLakeConnection {
         Ok(ServerStats::new(ret))
     }
 
-    #[pyo3(signature = (sql, fp, method=None, format_options=None, copy_options=None))]
+    #[pyo3(signature = (sql, fp, method=None))]
     pub fn load_file<'p>(
         &'p self,
         py: Python<'p>,
         sql: String,
         fp: String,
         method: Option<String>,
-        format_options: Option<BTreeMap<String, String>>,
-        copy_options: Option<BTreeMap<String, String>>,
     ) -> PyResult<ServerStats> {
         let this = self.0.clone();
-        let ret = if format_options.is_some() {
-            wait_for_future(py, async move {
-                let format_options = options_as_ref(&format_options);
-                let copy_options = options_as_ref(&copy_options);
-                this.load_file_with_options(&sql, Path::new(&fp), format_options, copy_options)
-                    .await
-                    .map_err(DriverError::new)
-            })?
-        } else {
-            let load_method = LoadMethod::from_str(&method.unwrap_or_else(|| "stage".to_string()))
-                .map_err(DriverError::new)?;
-            wait_for_future(py, async move {
-                this.load_file(&sql, Path::new(&fp), load_method)
-                    .await
-                    .map_err(DriverError::new)
-            })?
-        };
+        let load_method =
+            LoadMethod::from_str(method.as_deref().unwrap_or("stage")).map_err(DriverError::new)?;
+        let ret = wait_for_future(py, async move {
+            this.load_file(&sql, Path::new(&fp), load_method)
+                .await
+                .map_err(DriverError::new)
+        })?;
         Ok(ServerStats::new(ret))
     }
 

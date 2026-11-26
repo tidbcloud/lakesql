@@ -158,14 +158,6 @@ pub trait IConnection: Send + Sync {
 
     async fn load_file(&self, sql: &str, fp: &Path, method: LoadMethod) -> Result<ServerStats>;
 
-    async fn load_file_with_options(
-        &self,
-        sql: &str,
-        fp: &Path,
-        file_format_options: Option<BTreeMap<&str, &str>>,
-        copy_options: Option<BTreeMap<&str, &str>>,
-    ) -> Result<ServerStats>;
-
     async fn stream_load(
         &self,
         sql: &str,

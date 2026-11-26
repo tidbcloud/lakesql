@@ -14,7 +14,7 @@
 
 use async_trait::async_trait;
 use log::info;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::pin::Pin;
@@ -84,26 +84,6 @@ impl RestAPIConnection {
             spill_file_nums: 0,
             spill_bytes: 0,
         })
-    }
-    async fn load_data_with_options(
-        &self,
-        sql: &str,
-        data: Reader,
-        size: u64,
-        file_format_options: Option<BTreeMap<&str, &str>>,
-        copy_options: Option<BTreeMap<&str, &str>>,
-    ) -> Result<ServerStats> {
-        let location = self.gen_temp_stage_location()?;
-        let file_format_options =
-            file_format_options.unwrap_or_else(Self::default_file_format_options);
-        let copy_options = copy_options.unwrap_or_else(Self::default_copy_options);
-        self.upload_to_stage(&location, Box::new(data), size)
-            .await?;
-        let stats = self
-            .client
-            .insert_with_stage(sql, &location, file_format_options, copy_options)
-            .await?;
-        Ok(ServerStats::from(stats))
     }
 }
 
@@ -260,21 +240,6 @@ impl IConnection for RestAPIConnection {
         self.load_data(sql, Box::new(data), size, method).await
     }
 
-    async fn load_file_with_options(
-        &self,
-        sql: &str,
-        fp: &Path,
-        file_format_options: Option<BTreeMap<&str, &str>>,
-        copy_options: Option<BTreeMap<&str, &str>>,
-    ) -> Result<ServerStats> {
-        let file = File::open(fp).await?;
-        let metadata = file.metadata().await?;
-        let size = metadata.len();
-        let data = BufReader::new(file);
-        self.load_data_with_options(sql, Box::new(data), size, file_format_options, copy_options)
-            .await
-    }
-
     async fn stream_load(
         &self,
         sql: &str,
@@ -294,25 +259,10 @@ impl IConnection for RestAPIConnection {
     }
 }
 
-impl<'o> RestAPIConnection {
+impl RestAPIConnection {
     pub async fn try_create(dsn: &str, name: String) -> Result<Self> {
         let client = APIClient::new(dsn, Some(name)).await?;
         Ok(Self { client })
-    }
-
-    fn default_file_format_options() -> BTreeMap<&'o str, &'o str> {
-        vec![
-            ("type", "CSV"),
-            ("field_delimiter", ","),
-            ("record_delimiter", "\n"),
-            ("skip_header", "0"),
-        ]
-        .into_iter()
-        .collect()
-    }
-
-    fn default_copy_options() -> BTreeMap<&'o str, &'o str> {
-        vec![("purge", "true")].into_iter().collect()
     }
 }
 

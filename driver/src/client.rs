@@ -14,7 +14,6 @@
 
 use log::error;
 use once_cell::sync::Lazy;
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 use url::Url;
@@ -204,18 +203,6 @@ impl Connection {
 
     pub async fn load_file(&self, sql: &str, fp: &Path, method: LoadMethod) -> Result<ServerStats> {
         self.inner.load_file(sql, fp, method).await
-    }
-
-    pub async fn load_file_with_options(
-        &self,
-        sql: &str,
-        fp: &Path,
-        file_format_options: Option<BTreeMap<&str, &str>>,
-        copy_options: Option<BTreeMap<&str, &str>>,
-    ) -> Result<ServerStats> {
-        self.inner
-            .load_file_with_options(sql, fp, file_format_options, copy_options)
-            .await
     }
 
     pub async fn stream_load(

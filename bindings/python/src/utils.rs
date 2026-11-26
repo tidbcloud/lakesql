@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use lake_driver::Params;
@@ -85,12 +84,4 @@ fn py_to_json(v: Bound<PyAny>) -> PyResult<serde_json::Value> {
     Err(PyAttributeError::new_err(format!(
         "Invalid parameter type for: {v:?}, expected str, bool, int or float"
     )))
-}
-
-pub(super) fn options_as_ref(
-    format_options: &Option<BTreeMap<String, String>>,
-) -> Option<BTreeMap<&str, &str>> {
-    format_options
-        .as_ref()
-        .map(|opts| opts.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
 }

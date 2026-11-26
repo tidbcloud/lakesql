@@ -276,7 +276,7 @@ class AsyncLakeConnection:
         self, sql: str, data: list[list[str]], method: str = None
     ) -> ServerStats: ...
     async def load_file(
-        self, sql: str, file: str, method: str = None
+        self, sql: str, fp: str, method: str | None = None
     ) -> ServerStats: ...
 ```
 
@@ -311,13 +311,19 @@ class BlockingLakeConnection:
         self, sql: str, data: list[list[str]], method: str = None
     ) -> ServerStats: ...
     def load_file(
-        self,
-        sql: str,
-        file: str,
-        method: str = None,
-        format_option: dict = None,
-        copy_options: dict = None,
+        self, sql: str, fp: str, method: str | None = None
     ) -> ServerStats: ...
+```
+
+`load_file` defaults to `stage`. To customize the file format, specify
+`FILE_FORMAT` in the SQL statement instead of passing a `format_options` dict:
+
+```python
+conn.load_file(
+    "INSERT INTO events FROM @_databend_load FILE_FORMAT=(TYPE=CSV, SKIP_HEADER=1)",
+    "events.csv",
+    method="stage",
+)
 ```
 
 ### BlockingLakeCursor

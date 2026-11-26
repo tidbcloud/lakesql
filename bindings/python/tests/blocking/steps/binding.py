@@ -310,6 +310,7 @@ def test_load_file(context, load_method):
     progress = context.conn.load_file(
         "INSERT INTO test1 VALUES FROM @_databend_load file_format = (type=csv)",
         csv_path,
+        method=load_method,
     )
     assert progress.write_rows == 3, (
         f"{load_method} progress.write_rows: {progress.write_rows}"
