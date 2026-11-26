@@ -49,10 +49,10 @@ impl Value {
                 }
             },
             Value::Timestamp(dt) => {
-                serde_json::Value::String(dt.strftime(TIMESTAMP_FORMAT).to_string())
+                serde_json::Value::String(dt.format(TIMESTAMP_FORMAT).to_string())
             }
             Value::TimestampTz(dt) => {
-                serde_json::Value::String(dt.strftime(TIMESTAMP_TIMEZONE_FORMAT).to_string())
+                serde_json::Value::String(dt.format(TIMESTAMP_TIMEZONE_FORMAT).to_string())
             }
             Value::Date(d) => match date_from_day_count(*d) {
                 Some(date) => serde_json::Value::String(date.format("%Y-%m-%d").to_string()),
@@ -105,10 +105,10 @@ impl Value {
             Value::String(s) => format!("'{}'", s),
             Value::Number(n) => n.to_string(),
             Value::Timestamp(dt) => {
-                format!("'{}'", dt.strftime(TIMESTAMP_FORMAT))
+                format!("'{}'", dt.format(TIMESTAMP_FORMAT))
             }
             Value::TimestampTz(dt) => {
-                let formatted = dt.strftime(TIMESTAMP_TIMEZONE_FORMAT);
+                let formatted = dt.format(TIMESTAMP_TIMEZONE_FORMAT);
                 format!("'{formatted}'")
             }
             Value::Date(d) => match date_from_day_count(*d) {

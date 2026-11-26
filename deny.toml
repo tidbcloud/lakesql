@@ -10,9 +10,8 @@ ignore = [
     "RUSTSEC-2025-0140",
     # chrono and chrono-tz were flagged as unmaintained on 2026-11-19
     # (https://github.com/chronotope/chrono/issues/1768) and no fixed release
-    # exists. chrono only reaches us through arrow, and chrono-tz is the type
-    # of our public `DateTime<Tz>` conversions, so both need a deliberate
-    # migration (jiff is already a dependency) instead of a version bump.
+    # exists. Both crates back public timestamp types; replacing them requires
+    # an API migration rather than a dependency version bump.
     "RUSTSEC-2026-0543",
     "RUSTSEC-2026-0555",
 ]

@@ -168,9 +168,22 @@ let inserted = insert.end().await?;
 | `DOUBLE`    | `f64`                   |
 | `DECIMAL`   | `String`                |
 | `DATE`      | `chrono::NaiveDate`     |
-| `TIMESTAMP` | `chrono::NaiveDateTime` |
+| `TIMESTAMP` | `chrono::NaiveDateTime`, `chrono::DateTime<chrono_tz::Tz>` |
+| `TIMESTAMP_TZ` | `chrono::DateTime<chrono::FixedOffset>` |
 | `VARCHAR`   | `String`                |
 | `BINARY`    | `Vec<u8>`               |
+
+### Timestamp representation
+
+`Value::Timestamp` holds a `chrono::DateTime<chrono_tz::Tz>` in the session
+zone. `Value::TimestampTz` holds a `chrono::DateTime<chrono::FixedOffset>`
+with the server's offset. Conversion to `chrono::NaiveDateTime` returns UTC.
+The `zoned_to_chrono_*` helpers are no longer needed.
+
+The driver preserves microseconds at the SQL bounds in text and Arrow results.
+A valid UTC instant can display in local year 10000. Python `datetime` cannot
+represent that year; select `to_string(value)` if you need to read it in Python.
+JavaScript `Date` has millisecond precision.
 
 ### Semi-Structured Data Types
 
