@@ -30,10 +30,16 @@ pub struct LoginRequest {
 
 impl From<&SessionState> for LoginRequest {
     fn from(value: &SessionState) -> Self {
+        // Login validates databases in the default catalog. For other catalogs,
+        // defer applying the database until /v1/query, which receives both fields.
+        let database = match value.catalog.as_deref() {
+            Some(catalog) if !catalog.eq_ignore_ascii_case("default") => None,
+            _ => value.database.clone(),
+        };
         Self {
             role: value.role.clone(),
             settings: value.settings.clone(),
-            database: value.database.clone(),
+            database,
         }
     }
 }

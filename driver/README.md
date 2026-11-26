@@ -7,6 +7,13 @@ TiDB Cloud Lake unified SQL client for RestAPI and FlightSQL
 
 ## Usage
 
+### REST connection options
+
+- `catalog=<name>` sets the initial catalog. In `lake://root@localhost:8000/db1?catalog=iceberg`, `db1` is resolved in the `iceberg` catalog.
+- `server_side_params=enable|disable` controls parameter binding. By default (`enable`), the driver sends bound values separately from the SQL. Set it to `disable` to have the driver format bound values into the SQL before sending it.
+
+These options apply only to REST connections.
+
 ### Basic Operations
 
 ```rust

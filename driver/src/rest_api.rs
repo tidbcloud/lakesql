@@ -140,8 +140,7 @@ impl IConnection for RestAPIConnection {
     }
 
     fn supports_server_side_params(&self) -> bool {
-        // This is a REST protocol feature, not a server-version check.
-        true
+        self.client.server_side_params_enabled()
     }
 
     async fn exec(&self, sql: &str) -> Result<i64> {
@@ -397,5 +396,26 @@ impl FromRowStats for RawRowWithStats {
 
     fn from_row(row: Row) -> Self {
         RawRowWithStats::Row(RawRow::from(row))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rest_dsn_controls_parameter_binding_without_login() {
+        for (options, enabled) in [
+            ("", true),
+            ("&server_side_params=enable", true),
+            ("&server_side_params=disable", false),
+        ] {
+            let dsn = format!("lake://localhost/?login=disable&presign=off{options}");
+            let conn = RestAPIConnection::try_create(&dsn, "test".into())
+                .await
+                .unwrap();
+            assert_eq!(conn.supports_server_side_params(), enabled);
+            conn.close().await.unwrap();
+        }
     }
 }
