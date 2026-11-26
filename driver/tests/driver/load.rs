@@ -36,12 +36,8 @@ async fn prepare_client(presigned: bool) -> Option<Client> {
     Some(client)
 }
 
-async fn prepare_table(client: &Client, prefix: &str, load_method: Option<LoadMethod>) -> String {
-    let method = if let Some(load_method) = load_method {
-        format!("{load_method:?}").to_lowercase()
-    } else {
-        "attachment".to_string()
-    };
+async fn prepare_table(client: &Client, prefix: &str, load_method: LoadMethod) -> String {
+    let method = format!("{load_method:?}").to_lowercase();
     let conn = client.get_conn().await.unwrap();
     let table = format!(
         "books_{prefix}_{}_{method}",
@@ -80,26 +76,13 @@ async fn prepare_data(table: &str, client: &Client, load_method: LoadMethod) {
     assert_eq!(stats.write_rows, 3);
 }
 
-async fn prepare_data_with_file(
-    table: &str,
-    file_type: &str,
-    client: &Client,
-    load_method: Option<LoadMethod>,
-) {
+async fn prepare_data_with_file(table: &str, client: &Client, load_method: LoadMethod) {
     let conn = client.get_conn().await.unwrap();
-    let fp = format!("tests/driver/data/books.{file_type}");
-    let stats = if let Some(load_method) = load_method {
-        let sql =
-            format!("INSERT INTO `{table}` VALUES from @_databend_load file_format=(type=csv)");
-        conn.load_file(&sql, Path::new(&fp), load_method)
-            .await
-            .unwrap()
-    } else {
-        let sql = format!("INSERT INTO `{table}` VALUES");
-        conn.load_file_with_options(&sql, Path::new(&fp), None, None)
-            .await
-            .unwrap()
-    };
+    let sql = format!("INSERT INTO `{table}` VALUES from @_databend_load file_format=(type=csv)");
+    let stats = conn
+        .load_file(&sql, Path::new("tests/driver/data/books.csv"), load_method)
+        .await
+        .unwrap();
     assert_eq!(stats.write_rows, 3);
 }
 
@@ -140,9 +123,9 @@ async fn check_result(table: &str, client: &Client) {
 #[tokio::test]
 async fn load_csv_with_presign() {
     if let Some(client) = prepare_client(true).await {
-        for m in [None, Some(LoadMethod::Streaming), Some(LoadMethod::Stage)] {
+        for m in [LoadMethod::Streaming, LoadMethod::Stage] {
             let table = prepare_table(&client, "load_csv_with_presign", m).await;
-            prepare_data_with_file(&table, "csv", &client, m).await;
+            prepare_data_with_file(&table, &client, m).await;
             check_result(&table, &client).await;
         }
     }
@@ -151,9 +134,9 @@ async fn load_csv_with_presign() {
 #[tokio::test]
 async fn load_csv_without_presign() {
     if let Some(client) = prepare_client(false).await {
-        for m in [Some(LoadMethod::Streaming), Some(LoadMethod::Stage)] {
+        for m in [LoadMethod::Streaming, LoadMethod::Stage] {
             let table = prepare_table(&client, "load_csv_without_presign", m).await;
-            prepare_data_with_file(&table, "csv", &client, m).await;
+            prepare_data_with_file(&table, &client, m).await;
             check_result(&table, &client).await;
         }
     }
@@ -163,7 +146,7 @@ async fn load_csv_without_presign() {
 async fn stream_load_with_presign() {
     if let Some(client) = prepare_client(true).await {
         for m in [LoadMethod::Streaming, LoadMethod::Stage] {
-            let table = prepare_table(&client, "stream_load_with_presign", Some(m)).await;
+            let table = prepare_table(&client, "stream_load_with_presign", m).await;
             prepare_data(&table, &client, m).await;
             check_result(&table, &client).await;
         }
@@ -174,7 +157,7 @@ async fn stream_load_with_presign() {
 async fn stream_load_without_presign() {
     if let Some(client) = prepare_client(false).await {
         for m in [LoadMethod::Streaming, LoadMethod::Stage] {
-            let table = prepare_table(&client, "stream_load_without_presign", Some(m)).await;
+            let table = prepare_table(&client, "stream_load_without_presign", m).await;
             prepare_data(&table, &client, m).await;
             check_result(&table, &client).await;
         }

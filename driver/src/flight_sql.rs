@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -154,18 +154,6 @@ impl IConnection for FlightSQLConnection {
     async fn load_file(&self, _sql: &str, _fp: &Path, _method: LoadMethod) -> Result<ServerStats> {
         Err(Error::Protocol(
             "LOAD FILE unavailable for FlightSQL".to_string(),
-        ))
-    }
-
-    async fn load_file_with_options(
-        &self,
-        _sql: &str,
-        _fp: &Path,
-        _file_format_options: Option<BTreeMap<&str, &str>>,
-        _copy_options: Option<BTreeMap<&str, &str>>,
-    ) -> Result<ServerStats> {
-        Err(Error::Protocol(
-            "load_file_with_options unavailable for FlightSQL".to_string(),
         ))
     }
 
