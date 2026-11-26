@@ -22,11 +22,14 @@ const { Given, When, Then } = require("@cucumber/cucumber");
 const util = require("util");
 const sleep = util.promisify(setTimeout);
 
-// Read the server version only if a future test needs version-specific expectations.
-exports.getDbVersion = function () {
-  const version = process.env.DB_VERSION;
+function getVersion(name) {
+  const version = process.env[name];
   return version ? version.split(".").map(Number) : [100, 0, 0];
-};
+}
+
+// Keep on-demand parsers for future version-specific expectations.
+exports.getDbVersion = () => getVersion("DB_VERSION");
+exports.getDriverVersion = () => getVersion("DRIVER_VERSION");
 
 process.env.LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS = "1";
 process.env.RUST_LOG = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=debug";

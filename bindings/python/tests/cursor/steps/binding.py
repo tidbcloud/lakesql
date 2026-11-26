@@ -33,10 +33,19 @@ POINT_WKB = bytes.fromhex("01010000000000000000004E400000000000804240")
 default_tzinfo = timezone.utc
 
 
-def get_db_version():
-    """Read the server version if a future test needs version-specific expectations."""
-    version = os.getenv("DB_VERSION")
+def _get_version(name):
+    version = os.getenv(name)
     return tuple(map(int, version.split("."))) if version else (100, 0, 0)
+
+
+def get_db_version():
+    """Read the server version on demand."""
+    return _get_version("DB_VERSION")
+
+
+def get_driver_version():
+    """Read the driver version on demand."""
+    return _get_version("DRIVER_VERSION")
 
 
 @given("A new Lake Driver Client")
