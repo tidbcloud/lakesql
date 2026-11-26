@@ -16,16 +16,18 @@ use log::error;
 use once_cell::sync::Lazy;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use url::Url;
 
 use crate::conn::IConnection;
 #[cfg(feature = "flight-sql")]
 use crate::flight_sql::FlightSQLConnection;
+use crate::params::parse_statement;
 use crate::placeholder::PlaceholderVisitor;
 use crate::ConnectionInfo;
 use crate::Params;
 
-use databend_common_ast::parser::Dialect;
+use databend_common_ast::ast::Statement;
 use lake_client::PresignedResponse;
 use lake_driver_core::error::{Error, Result};
 use lake_driver_core::raw_rows::{RawRow, RawRowIterator};
@@ -44,6 +46,22 @@ static VERSION: Lazy<String> = Lazy::new(|| {
 pub enum LoadMethod {
     Stage,
     Streaming,
+}
+
+fn statement_is_dml(statement: Option<&Statement>) -> bool {
+    match statement {
+        Some(Statement::StatementWithSettings { stmt, .. }) => statement_is_dml(Some(stmt)),
+        Some(
+            Statement::Insert(_)
+            | Statement::InsertMultiTable(_)
+            | Statement::Replace(_)
+            | Statement::MergeInto(_)
+            | Statement::Delete(_)
+            | Statement::Update(_)
+            | Statement::CopyIntoTable(_),
+        ) => true,
+        _ => false,
+    }
 }
 
 impl FromStr for LoadMethod {
@@ -415,6 +433,7 @@ pub struct QueryBuilder<'a> {
     connection: &'a Connection,
     sql: String,
     params: Option<Params>,
+    statement: OnceLock<Option<Statement>>,
 }
 
 impl<'a> QueryBuilder<'a> {
@@ -423,12 +442,17 @@ impl<'a> QueryBuilder<'a> {
             connection,
             sql: sql.to_string(),
             params: None,
+            statement: OnceLock::new(),
         }
     }
 
     pub fn bind<P: Into<Params> + Send>(mut self, params: P) -> Self {
         self.params = Some(params.into());
         self
+    }
+
+    pub fn is_dml(&self) -> bool {
+        statement_is_dml(self.statement())
     }
 
     pub async fn iter(self) -> Result<RowIterator> {
@@ -513,14 +537,20 @@ impl<'a> QueryBuilder<'a> {
 
     fn should_use_server_side_params(&self) -> bool {
         self.connection.inner.supports_server_side_params()
-            && !sql_has_dollar_placeholders(&self.sql)
+            && !statement_has_dollar_placeholders(self.statement())
     }
 
     fn get_final_sql(&self) -> String {
         match &self.params {
-            Some(params) => params.replace(&self.sql),
+            Some(params) => params.replace_with_statement(&self.sql, self.statement()),
             None => self.sql.clone(),
         }
+    }
+
+    fn statement(&self) -> Option<&Statement> {
+        self.statement
+            .get_or_init(|| parse_statement(&self.sql))
+            .as_ref()
     }
 }
 
@@ -529,6 +559,7 @@ pub struct ExecBuilder<'a> {
     connection: &'a Connection,
     sql: String,
     params: Option<Params>,
+    statement: OnceLock<Option<Statement>>,
 }
 
 impl<'a> ExecBuilder<'a> {
@@ -537,6 +568,7 @@ impl<'a> ExecBuilder<'a> {
             connection,
             sql: sql.to_string(),
             params: None,
+            statement: OnceLock::new(),
         }
     }
 
@@ -556,16 +588,26 @@ impl<'a> ExecBuilder<'a> {
                     .await;
             }
         }
-        let sql = match self.params {
-            Some(params) => params.replace(&self.sql),
-            None => self.sql,
-        };
+        let sql = self.get_final_sql();
         self.connection.inner.exec(&sql).await
     }
 
     fn should_use_server_side_params(&self) -> bool {
         self.connection.inner.supports_server_side_params()
-            && !sql_has_dollar_placeholders(&self.sql)
+            && !statement_has_dollar_placeholders(self.statement())
+    }
+
+    fn get_final_sql(&self) -> String {
+        match &self.params {
+            Some(params) => params.replace_with_statement(&self.sql, self.statement()),
+            None => self.sql.clone(),
+        }
+    }
+
+    fn statement(&self) -> Option<&Statement> {
+        self.statement
+            .get_or_init(|| parse_statement(&self.sql))
+            .as_ref()
     }
 }
 
@@ -579,14 +621,10 @@ impl<'a> std::future::IntoFuture for ExecBuilder<'a> {
     }
 }
 
-fn sql_has_dollar_placeholders(sql: &str) -> bool {
-    let tokens = match databend_common_ast::parser::tokenize_sql(sql) {
-        Ok(t) => t,
-        Err(_) => return false,
-    };
-    if let Ok((stmt, _)) = databend_common_ast::parser::parse_sql(&tokens, Dialect::PostgreSQL) {
+fn statement_has_dollar_placeholders(statement: Option<&Statement>) -> bool {
+    if let Some(statement) = statement {
         let mut visitor = PlaceholderVisitor::new();
-        return visitor.has_dollar_positions(&stmt);
+        return visitor.has_dollar_positions(statement);
     }
     false
 }
@@ -597,4 +635,20 @@ pub trait RowORM: TryFrom<Row> + Clone {
     fn query_field_names() -> Vec<&'static str>; // For SELECT queries (exclude skip_deserializing)
     fn insert_field_names() -> Vec<&'static str>; // For INSERT statements (exclude skip_serializing)
     fn to_values(&self) -> Vec<Value>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_statement_is_dml() {
+        let insert = parse_statement("INSERT INTO t VALUES (1)");
+        let update = parse_statement("SETTINGS(max_threads = 1) UPDATE t SET a = 1");
+        let query = parse_statement("SELECT * FROM t");
+
+        assert!(statement_is_dml(insert.as_ref()));
+        assert!(statement_is_dml(update.as_ref()));
+        assert!(!statement_is_dml(query.as_ref()));
+    }
 }
