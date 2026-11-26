@@ -102,7 +102,7 @@ mod test {
 
     #[test]
     fn parse_dsn() -> Result<()> {
-        let dsn = "lake://username:3a%40SC%28nYE%25a1k%3D%7B%7BR@app.lake.tidbcloud.com/test?wait_time_secs=10&max_rows_in_buffer=5000000&max_rows_per_page=10000&warehouse=wh&sslmode=disable";
+        let dsn = "lake://username:3a%40SC%28nYE%25a1k%3D%7B%7BR@app.lake.tidbcloud.com/test?wait_time_secs=10&query_result_format=arrow&warehouse=wh&sslmode=disable";
         let args = ConnectionArgs::from_dsn(dsn)?;
         let password_str = "3a@SC(nYE%a1k={{R";
         assert_eq!(args.password.inner(), password_str);
@@ -116,8 +116,7 @@ mod test {
             args: {
                 let mut args = BTreeMap::new();
                 args.insert("wait_time_secs".to_string(), "10".to_string());
-                args.insert("max_rows_in_buffer".to_string(), "5000000".to_string());
-                args.insert("max_rows_per_page".to_string(), "10000".to_string());
+                args.insert("query_result_format".to_string(), "arrow".to_string());
                 args.insert("warehouse".to_string(), "wh".to_string());
                 args.insert("sslmode".to_string(), "disable".to_string());
                 args
@@ -166,15 +165,14 @@ mod test {
             args: {
                 let mut args = BTreeMap::new();
                 args.insert("wait_time_secs".to_string(), "10".to_string());
-                args.insert("max_rows_in_buffer".to_string(), "5000000".to_string());
-                args.insert("max_rows_per_page".to_string(), "10000".to_string());
+                args.insert("query_result_format".to_string(), "arrow".to_string());
                 args.insert("warehouse".to_string(), "wh".to_string());
                 args.insert("sslmode".to_string(), "disable".to_string());
                 args
             },
         };
         let dsn = args.get_dsn()?;
-        let expected = "lake://username:3a%40SC%28nYE%25a1k%3D%7B%7BR@app.lake.tidbcloud.com:443/test?max_rows_in_buffer=5000000&max_rows_per_page=10000&sslmode=disable&wait_time_secs=10&warehouse=wh";
+        let expected = "lake://username:3a%40SC%28nYE%25a1k%3D%7B%7BR@app.lake.tidbcloud.com:443/test?query_result_format=arrow&sslmode=disable&wait_time_secs=10&warehouse=wh";
         assert_eq!(dsn, expected);
         Ok(())
     }

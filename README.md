@@ -266,9 +266,10 @@ Examples:
 | `query_result_format`       | (Since v0.33.1) Format to fetch result set, available arguments are `json`/`arrow`.                                                                              | `JSON`    |
 | `sslmode`                   | SSL mode, available values are `enable`/`disable`.                                                                                                               | `enable` |
 | `wait_time_secs`            | Request wait time for page.                                                                                                                                      | `1`       |
-| `max_rows_per_page`         | Max result rows for a single page.                                                                                                                               | `10000`   |
 | `page_request_timeout_secs` | Timeout for a single page request.                                                                                                                               | `30`      |
 | `presign`                   | Whether to enable presign for data loading, available arguments are `auto`/`detect`/`on`/`off`. Default to `auto` which only enable presign for `TiDB Cloud` | `auto`    |
+
+Remove `max_rows_in_buffer` and `max_rows_per_page` from existing DSNs to use the server's defaults. Replace `body_format` with `query_result_format`.
 
 #### FlightSQL Client
 
