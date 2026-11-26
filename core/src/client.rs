@@ -760,7 +760,7 @@ impl APIClient {
         let query_id = self.gen_query_id();
         let mut submission = QuerySubmission::new(self, query_id.clone());
         let mut headers = self.make_headers(Some(&query_id))?;
-        if self.capability.arrow_data && self.query_result_format == "arrow" && !force_json_body {
+        if self.query_result_format == "arrow" && !force_json_body {
             debug!("accept arrow data");
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
             req = req.with_arrow();
@@ -878,7 +878,7 @@ impl APIClient {
         }
         info!("query page");
         let mut headers = self.make_headers(Some(query_id))?;
-        if self.capability.arrow_data && self.query_result_format == "arrow" {
+        if self.query_result_format == "arrow" {
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
         }
         let mut builder = self.cli.get(endpoint.clone());
@@ -1197,10 +1197,6 @@ impl APIClient {
         let response = self
             .query_request_helper(request, true, false, true, RequestKind::Login, None)
             .await?;
-        if response.status == StatusCode::NOT_FOUND {
-            info!("login return 404, skip login on the old version server");
-            return Ok(());
-        }
         let login =
             Self::decode_auth_response(response.status, &response.body, RequestKind::Login)?;
         if let Some(v) = response.headers.get(HEADER_SESSION_ID) {
@@ -1355,7 +1351,7 @@ impl APIClient {
             RefreshResponse::Err { error } => {
                 Err(Error::AuthFailure(Self::auth_error_code(error.code)))
             }
-            RefreshResponse::Wrapped { tokens: info } | RefreshResponse::Flat(info) => {
+            RefreshResponse::Wrapped { tokens: info } => {
                 *self_login_info.lock() = (info, Instant::now());
                 Ok(())
             }
@@ -1671,7 +1667,7 @@ impl Default for APIClient {
             closed: AtomicBool::new(false),
             last_query_id: Default::default(),
             server_version: None,
-            capability: Default::default(),
+            capability: Capability,
             queries_need_heartbeat: Default::default(),
             retry_count: 3,
             retry_delay_secs: 10,

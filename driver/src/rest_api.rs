@@ -57,19 +57,9 @@ impl RestAPIConnection {
     ) -> Result<ServerStats> {
         let location = self.gen_temp_stage_location()?;
         self.upload_to_stage(&location, data, size).await?;
-        if self.client.capability().streaming_load {
-            let sql = sql.replace(LOAD_PLACEHOLDER, &location);
-            let page = self.client.query_all(&sql, None).await?;
-            Ok(ServerStats::from(page.stats))
-        } else {
-            let file_format_options = Self::default_file_format_options();
-            let copy_options = Self::default_copy_options();
-            let stats = self
-                .client
-                .insert_with_stage(sql, &location, file_format_options, copy_options)
-                .await?;
-            Ok(ServerStats::from(stats))
-        }
+        let sql = sql.replace(LOAD_PLACEHOLDER, &location);
+        let page = self.client.query_all(&sql, None).await?;
+        Ok(ServerStats::from(page.stats))
     }
 
     async fn load_data_with_streaming(
@@ -170,7 +160,8 @@ impl IConnection for RestAPIConnection {
     }
 
     fn supports_server_side_params(&self) -> bool {
-        self.client.capability().server_side_params
+        // This is a REST protocol feature, not a server-version check.
+        true
     }
 
     async fn exec(&self, sql: &str) -> Result<i64> {
@@ -248,23 +239,10 @@ impl IConnection for RestAPIConnection {
         let sql = sql.trim_end();
         let sql = sql.trim_end_matches(';');
         info!("load data: size={size}, method={method:?}");
-        let sql_low = sql.to_lowercase();
-        let has_place_holder = sql_low.contains(LOAD_PLACEHOLDER);
-        let sql = match (self.client.capability().streaming_load, has_place_holder) {
-            (false, false) => {
-                // todo: deprecate this later
-                return self
-                    .load_data_with_options(sql, data, size, None, None)
-                    .await;
-            }
-            (false, true) => return Err(Error::BadArgument(
-                "Please upgrade your server to >= 1.2.781 to support insert from @_databend_load"
-                    .to_string(),
-            )),
-            (true, false) => {
-                format!("{sql} from @_databend_load file_format=(type=csv)")
-            }
-            (true, true) => sql.to_string(),
+        let sql = if sql.to_lowercase().contains(LOAD_PLACEHOLDER) {
+            sql.to_string()
+        } else {
+            format!("{sql} from {LOAD_PLACEHOLDER} file_format=(type=csv)")
         };
 
         match method {
@@ -312,14 +290,7 @@ impl IConnection for RestAPIConnection {
         let bytes = wtr.into_inner().map_err(|e| Error::IO(e.to_string()))?;
         let size = bytes.len() as u64;
         let reader = Box::new(std::io::Cursor::new(bytes));
-        let stats = if self.client.capability().streaming_load {
-            let sql = format!("{sql} from @_databend_load file_format = (type = csv)");
-            self.load_data(&sql, reader, size, method).await?
-        } else {
-            self.load_data_with_options(sql, reader, size, None, None)
-                .await?
-        };
-        Ok(stats)
+        self.load_data(sql, reader, size, method).await
     }
 }
 

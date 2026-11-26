@@ -29,26 +29,27 @@ os.environ["RUST_LOG"] = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=d
 import tidbcloudlake_driver
 
 NOW = int(time.time())
-DB_VERSION = os.getenv("DB_VERSION")
-if DB_VERSION is not None:
-    DB_VERSION = tuple(map(int, DB_VERSION.split(".")))
-else:
-    DB_VERSION = (100, 0, 0)
-
-DRIVER_VERSION = os.getenv("DRIVER_VERSION")
-if DRIVER_VERSION is not None:
-    DRIVER_VERSION = tuple(map(int, DRIVER_VERSION.split(".")))
-else:
-    DRIVER_VERSION = (100, 0, 0)
 
 POINT_GEOJSON = '{"type": "Point", "coordinates": [60,37]}'
 POINT_WKT = "POINT(60 37)"
 POINT_WKB = bytes.fromhex("01010000000000000000004E400000000000804240")
 
-if DRIVER_VERSION > (0, 30, 3):
-    default_tzinfo = timezone.utc
-else:
-    default_tzinfo = None
+default_tzinfo = timezone.utc
+
+
+def _get_version(name):
+    version = os.getenv(name)
+    return tuple(map(int, version.split("."))) if version else (100, 0, 0)
+
+
+def get_db_version():
+    """Read the server version on demand."""
+    return _get_version("DB_VERSION")
+
+
+def get_driver_version():
+    """Read the driver version on demand."""
+    return _get_version("DRIVER_VERSION")
 
 
 @given("A new Lake Driver Client")
@@ -134,11 +135,7 @@ def _(context):
 
     import sys
 
-    if (
-        DRIVER_VERSION > (0, 30, 3)
-        and DB_VERSION > (1, 2, 836)
-        and sys.version_info.minor >= 8
-    ):
+    if sys.version_info.minor >= 8:
         tz = "Asia/Shanghai"
         if sys.version_info.minor >= 9:
             from zoneinfo import ZoneInfo
@@ -152,65 +149,49 @@ def _(context):
         assert row.values()[0] == exp, f"datetime(session level tz): {row.values()}"
         context.conn.exec("set timezone='UTC'")
 
-        if DB_VERSION >= (1, 2, 839):
-            row = context.conn.query_row(
-                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789')"
-            )
-            assert row.values()[0] == exp, f"datetime(query level tz): {row.values()}"
+        row = context.conn.query_row(
+            f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789')"
+        )
+        assert row.values()[0] == exp, f"datetime(query level tz): {row.values()}"
 
-            row = context.conn.query_row(
-                f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789'), 10"
-            )
-            assert row.values()[0] == exp, (
-                f"datetime in Tuple: {row.values()[0]} != {exp}"
-            )
+        row = context.conn.query_row(
+            f"settings(timezone='{tz}') select to_datetime('2024-04-16 12:34:56.789'), 10"
+        )
+        assert row.values()[0] == exp, f"datetime in Tuple: {row.values()[0]} != {exp}"
 
         tz_expected = timezone(timedelta(hours=6))
         row = context.conn.query_row(
             f"settings(timezone='{tz}') select to_timestamp_tz('2024-04-16 12:34:56.789 +0600')"
         )
         exp = datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=tz_expected)
-        exp_bug = datetime(2024, 4, 16, 18, 34, 56, 789000, tzinfo=tz_expected)
-        if (
-            DB_VERSION >= (1, 2, 840)
-            and not os.getenv("QUERY_RESULT_FORMAT") == "arrow"
-        ) or (
-            DB_VERSION >= (1, 2, 844) and os.getenv("QUERY_RESULT_FORMAT") == "arrow"
-        ):
-            assert row.values()[0] == exp, f"timestamp_tz: {row.values()[0]} {exp}"
-        else:
-            assert row.values()[0] == exp_bug, (
-                f"timestamp_tz: {row.values()[0]} {exp_bug}"
-            )
+        assert row.values()[0] == exp, f"timestamp_tz: {row.values()[0]} {exp}"
 
-    if DRIVER_VERSION > (0, 33, 7) and DB_VERSION > (1, 2, 894):
-        row = context.conn.query_row("SELECT st_point(60,37)")
-        assert row.values()[0] == POINT_GEOJSON, f"geography: {row.values()}"
-        row = context.conn.query_row(
-            "settings(geometry_output_format='WKT') SELECT st_point(60,37)"
-        )
-        assert row.values()[0] == POINT_WKT, f"geography: {row.values()}"
-        row = context.conn.query_row(
-            "settings(geometry_output_format='WKB') SELECT st_point(60,37)"
-        )
-        assert row.values()[0] == POINT_WKB, f"geography: {row.values()}"
+    row = context.conn.query_row("SELECT st_point(60,37)")
+    assert row.values()[0] == POINT_GEOJSON, f"geography: {row.values()}"
+    row = context.conn.query_row(
+        "settings(geometry_output_format='WKT') SELECT st_point(60,37)"
+    )
+    assert row.values()[0] == POINT_WKT, f"geography: {row.values()}"
+    row = context.conn.query_row(
+        "settings(geometry_output_format='WKB') SELECT st_point(60,37)"
+    )
+    assert row.values()[0] == POINT_WKB, f"geography: {row.values()}"
 
-    if DRIVER_VERSION >= (0, 33, 1):  # quote change to `"`
-        # Map
-        row = context.conn.query_row("select {'xx':to_date('2020-01-01')}")
-        assert row.values() == ({"xx": date(2020, 1, 1)},), f"Map: {row.values()}"
+    # Map
+    row = context.conn.query_row("select {'xx':to_date('2020-01-01')}")
+    assert row.values() == ({"xx": date(2020, 1, 1)},), f"Map: {row.values()}"
 
-        # Tuple
-        row = context.conn.query_row(
-            "select (10, '20', to_datetime('2024-04-16 12:34:56.789'))"
-        )
-        assert row.values() == (
-            (
-                10,
-                "20",
-                datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=default_tzinfo),
-            ),
-        ), f"Tuple: {row.values()}"
+    # Tuple
+    row = context.conn.query_row(
+        "select (10, '20', to_datetime('2024-04-16 12:34:56.789'))"
+    )
+    assert row.values() == (
+        (
+            10,
+            "20",
+            datetime(2024, 4, 16, 12, 34, 56, 789000, tzinfo=default_tzinfo),
+        ),
+    ), f"Tuple: {row.values()}"
 
 
 @then("Select numbers should iterate all rows")
@@ -310,9 +291,8 @@ def _(context):
 
 
 def test_load_file(context, load_method):
-    if DRIVER_VERSION >= (0, 28, 3) and DB_VERSION >= (1, 2, 792):
-        context.conn.exec("CREATE OR REPLACE DATABASE db1")
-        context.conn.exec("use db1")
+    context.conn.exec("CREATE OR REPLACE DATABASE db1")
+    context.conn.exec("use db1")
     context.conn.exec(
         """
         CREATE OR REPLACE TABLE test1 (
@@ -338,8 +318,6 @@ def test_load_file(context, load_method):
     rows = context.conn.query_iter("SELECT * FROM test1")
     ret = [row.values() for row in rows]
 
-    quoted_empty = "" if DB_VERSION >= (1, 2, 866) else None
-
     expected = [
         (
             -1,
@@ -355,7 +333,7 @@ def test_load_file(context, load_method):
             2,
             2.0,
             '"',
-            quoted_empty,
+            "",
             date(2012, 5, 31),
             datetime(2012, 5, 31, 11, 20, tzinfo=default_tzinfo),
         ),
@@ -385,8 +363,7 @@ def _(context):
 @then("Temp table is cleaned up when conn is dropped")
 def _(context):
     test_temp_table(context, 1)
-    if DRIVER_VERSION > (0, 30, 3):
-        test_temp_table(context, 0)
+    test_temp_table(context, 0)
 
 
 def test_temp_table(context, by_close):
@@ -428,9 +405,6 @@ def test_temp_table(context, by_close):
 
 @then("last_query_id should return query ID after execution")
 def _(context):
-    if DRIVER_VERSION < (0, 28, 3):
-        return
-
     # Initially no query ID
     assert context.conn.last_query_id() is None, "Initially should have no query ID"
 
@@ -468,9 +442,6 @@ def _(context):
 
 @then("killQuery should return error for non-existent query ID")
 def _(context):
-    if DRIVER_VERSION < (0, 28, 3):
-        return
-
     # Test API signature
     assert hasattr(context.conn, "kill_query"), "kill_query should be a method"
     assert callable(getattr(context.conn, "kill_query")), (
@@ -496,10 +467,6 @@ def _(context):
 
 @then("Query should not timeout")
 def _(context):
-    if not (DRIVER_VERSION > (0, 30, 3) and DB_VERSION >= (1, 2, 709)):
-        print("SKIP")
-        return
-
     dsn = os.getenv(
         "TEST_LAKE_DSN",
         "lake://root:@localhost:8000/?sslmode=disable&wait_time_secs=3",
@@ -521,9 +488,6 @@ def _(context):
 
 @then("Drop result set should close it")
 def _(context):
-    if DRIVER_VERSION <= (0, 30, 3):
-        print("SKIP")
-        return
     db_name = "drop_result_set_conn"
     dsn = os.getenv(
         "TEST_LAKE_DSN",

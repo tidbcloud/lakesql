@@ -22,19 +22,14 @@ const { Given, When, Then } = require("@cucumber/cucumber");
 const util = require("util");
 const sleep = util.promisify(setTimeout);
 
-let DB_VERSION = process.env.DB_VERSION;
-if (DB_VERSION) {
-  DB_VERSION = DB_VERSION.split(".").map(Number);
-} else {
-  DB_VERSION = [100, 0, 0];
+function getVersion(name) {
+  const version = process.env[name];
+  return version ? version.split(".").map(Number) : [100, 0, 0];
 }
 
-let DRIVER_VERSION = process.env.DRIVER_VERSION;
-if (DRIVER_VERSION) {
-  DRIVER_VERSION = DRIVER_VERSION.split(".").map(Number);
-} else {
-  DRIVER_VERSION = [100, 0, 0];
-}
+// Keep on-demand parsers for future version-specific expectations.
+exports.getDbVersion = () => getVersion("DB_VERSION");
+exports.getDriverVersion = () => getVersion("DRIVER_VERSION");
 
 process.env.LAKE_DRIVER_HEARTBEAT_INTERVAL_SECONDS = "1";
 process.env.RUST_LOG = "warn,tidbcloudlake_driver=debug,tidbcloudlake_client=debug";
@@ -225,27 +220,19 @@ Then("Select types should be expected native types", { timeout: 60000 }, async f
     ]);
   }
 
-  // TimestampTz
-  if (!(DRIVER_VERSION > [0, 30, 3] && DB_VERSION >= [1, 2, 836])) {
-    const row = await this.conn.queryRow(`SELECT to_datetime_tz('2024-04-16 12:34:56.789 +0800'))`);
-    assert.deepEqual(row.values(), [new Date("2024-04-16 04:34:56.789Z")]);
+  {
+    const row = await this.conn.queryRow("SELECT st_point(60,37)");
+    assert.deepEqual(row.values(), [POINT_GEOJSON]);
   }
 
-  if (DRIVER_VERSION > [0, 31, 0] && DB_VERSION > [1, 2, 894]) {
-    {
-      const row = await this.conn.queryRow("SELECT st_point(60,37)");
-      assert.deepEqual(row.values(), [POINT_GEOJSON]);
-    }
+  {
+    const row = await this.conn.queryRow("settings(geometry_output_format='WKT') SELECT st_point(60,37)");
+    assert.deepEqual(row.values(), [POINT_WKT]);
+  }
 
-    {
-      const row = await this.conn.queryRow("settings(geometry_output_format='WKT') SELECT st_point(60,37)");
-      assert.deepEqual(row.values(), [POINT_WKT]);
-    }
-
-    {
-      const row = await this.conn.queryRow("settings(geometry_output_format='WKB') SELECT st_point(60,37)");
-      assert.deepEqual(row.values(), [POINT_WKB]);
-    }
+  {
+    const row = await this.conn.queryRow("settings(geometry_output_format='WKB') SELECT st_point(60,37)");
+    assert.deepEqual(row.values(), [POINT_WKB]);
   }
 });
 
@@ -470,10 +457,6 @@ Then("killQuery should return error for non-existent query ID", async function (
 });
 
 Then("Query should not timeout", { timeout: 30000 }, async function () {
-  if (!(DRIVER_VERSION > [0, 30, 3] && DB_VERSION >= [1, 2, 709])) {
-    console.log("SKIP");
-    return;
-  }
   const page_size = 10000;
 
   const parsedUrl = new URL(dsn);
@@ -509,10 +492,6 @@ Then("Query should not timeout", { timeout: 30000 }, async function () {
 });
 
 Then("Drop result set should close it", { timeout: 60000 }, async function () {
-  if (DRIVER_VERSION < [0, 30, 3]) {
-    console.log("SKIP");
-    return;
-  }
   const dbName = "drop_result_set_js";
   const n = (1n << 50n) + 1n;
 

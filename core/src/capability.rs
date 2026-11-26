@@ -14,20 +14,12 @@
 
 use semver::Version;
 
-#[derive(Default, Debug)]
-pub struct Capability {
-    pub streaming_load: bool,
-    pub arrow_data: bool,
-    pub server_side_params: bool,
-}
+#[derive(Debug, Default)]
+pub struct Capability;
 
 impl Capability {
-    pub fn from_server_version(ver: &Version) -> Capability {
-        Capability {
-            streaming_load: ver > &Version::new(1, 2, 781),
-            arrow_data: ver > &Version::new(1, 2, 835),
-            // TODO: update version threshold when server PR gets a release version
-            server_side_params: ver > &Version::new(1, 2, 900),
-        }
+    pub fn from_server_version(_version: &Version) -> Self {
+        // Keep this hook for capabilities introduced after the server baseline.
+        Self
     }
 }

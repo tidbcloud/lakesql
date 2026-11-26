@@ -29,6 +29,7 @@ struct RecordedRequest {
     path: String,
     authorization: Option<String>,
     query_id: Option<String>,
+    accept: Option<String>,
 }
 
 type ResponseHandler = dyn Fn(usize, &RecordedRequest) -> (u16, &'static str, String) + Send + Sync;
@@ -194,8 +195,9 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
     let path = request_line_parts.next().unwrap_or_default().to_string();
 
     let mut content_length = 0usize;
-    let mut authorization = None::<String>;
-    let mut query_id = None::<String>;
+    let mut authorization = None;
+    let mut query_id = None;
+    let mut accept = None;
 
     for line in lines {
         if line.is_empty() {
@@ -206,13 +208,12 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         };
         let key = k.trim().to_ascii_lowercase();
         let value = v.trim().to_string();
-        if key == "content-length" {
-            content_length = value.parse::<usize>().unwrap_or(0);
-        }
-        if key == "authorization" {
-            authorization = Some(value);
-        } else if key == "x-databend-query-id" {
-            query_id = Some(value);
+        match key.as_str() {
+            "content-length" => content_length = value.parse::<usize>().unwrap_or(0),
+            "authorization" => authorization = Some(value),
+            "x-databend-query-id" => query_id = Some(value),
+            "accept" => accept = Some(value),
+            _ => {}
         }
     }
 
@@ -227,6 +228,7 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<RecordedRequest> {
         path,
         authorization,
         query_id,
+        accept,
     })
 }
 
@@ -240,6 +242,7 @@ async fn write_response(
     let reason = match status {
         200 => "OK",
         401 => "Unauthorized",
+        404 => "Not Found",
         503 => "Service Unavailable",
         _ => "Unknown",
     };
@@ -439,20 +442,57 @@ async fn query_id_survives_connect_failure_after_a_503() {
 }
 
 #[tokio::test]
-async fn retry_401_reapplies_refreshed_session_token() {
-    for wrapped in [false, true] {
-        check_refreshed_session_token(wrapped).await;
-    }
+async fn login_not_found_is_an_error() {
+    let handler: Arc<ResponseHandler> = Arc::new(|_, _| (404, "text/plain", "not found".into()));
+    let (port, requests, server) = spawn_test_server(handler);
+    let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off");
+    let err = APIClient::new(&dsn, None)
+        .await
+        .err()
+        .expect("a missing login endpoint should fail the connection");
+    assert_eq!(err.status_code().unwrap().as_u16(), 404);
+    assert!(matches!(
+        err,
+        Error::WithContext {
+            request_kind: Some(lake_client::RequestKind::Login),
+            ..
+        }
+    ));
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    server.abort();
 }
 
-async fn check_refreshed_session_token(wrapped: bool) {
+#[tokio::test]
+async fn arrow_is_available_with_login_disabled() {
+    let handler: Arc<ResponseHandler> =
+        Arc::new(|_, _| (200, "application/json", ok_query_response("42")));
+    let (port, requests, server) = spawn_test_server(handler);
+    let dsn = build_dsn(port, 1, "presign=off&query_result_format=arrow");
+    let client = APIClient::new(&dsn, None).await.unwrap();
+    client.query_all("select 42", None).await.unwrap();
+    client
+        .query_all_inner("select 42", true, None)
+        .await
+        .unwrap();
+
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|req| req.path == "/v1/query"));
+    let arrow = Some("application/vnd.apache.arrow.stream");
+    assert_eq!(requests[0].accept.as_deref(), arrow);
+    assert_ne!(requests[1].accept.as_deref(), arrow);
+    server.abort();
+}
+
+#[tokio::test]
+async fn retry_401_reapplies_refreshed_session_token() {
     let old = "old-test-token";
     let new = "new-test-token";
     let refresh = "test-refresh-token";
     let handler: Arc<ResponseHandler> = Arc::new(move |idx, req| {
         let body = match (idx, req.path.as_str(), req.authorization.as_deref()) {
             (0, "/v1/session/login", _) => serde_json::json!({
-                "version": "1.2.900",
+                "version": "1.2.925-nightly",
                 "tokens": {"session_token": old, "refresh_token": refresh}
             })
             .to_string(),
@@ -463,14 +503,10 @@ async fn check_refreshed_session_token(wrapped: bool) {
                     logic_error_json_body(5101, "session token expired"),
                 );
             }
-            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => {
-                let tokens = serde_json::json!({"session_token": new, "refresh_token": refresh});
-                if wrapped {
-                    serde_json::json!({"tokens": tokens}).to_string()
-                } else {
-                    tokens.to_string()
-                }
-            }
+            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => serde_json::json!({
+                "tokens": {"session_token": new, "refresh_token": refresh}
+            })
+            .to_string(),
             (3, "/v1/query", Some("Bearer new-test-token")) => ok_query_response("42"),
             (4, "/v1/session/logout", Some("Bearer new-test-token")) => "{}".to_string(),
             _ => panic!("unexpected mock request: {req:?}"),
@@ -711,7 +747,19 @@ async fn login_does_not_expose_auth_response_text() {
 
 #[tokio::test]
 async fn refresh_does_not_expose_auth_response_text() {
-    for (status, expected, body) in rejected_auth_responses() {
+    let legacy_flat_response = (
+        200,
+        "JSON response",
+        serde_json::json!({
+            "session_token": AUTH_RESPONSE_CANARY,
+            "refresh_token": AUTH_RESPONSE_CANARY,
+        })
+        .to_string(),
+    );
+    for (status, expected, body) in rejected_auth_responses()
+        .into_iter()
+        .chain([legacy_flat_response])
+    {
         let handler: Arc<ResponseHandler> = Arc::new(move |_, req| match req.path.as_str() {
             "/v1/session/login" => (
                 200,
