@@ -14,6 +14,8 @@
 
 import os
 import gc
+import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 import time
@@ -63,6 +65,7 @@ def _(context):
     client = tidbcloudlake_driver.BlockingLakeClient(dsn)
     context.conn = client.get_conn()
     context.client = client
+    context.dsn = dsn
 
 
 @when("Create a test table")
@@ -464,6 +467,43 @@ def _(context):
             "Should return meaningful error message"
         )
         print(f"Expected error for non-existent query: {err}")
+
+
+@then("killQuery from another connection should cancel the query")
+def _(context):
+    server_version = context.conn.version()
+    server = re.search(r"v(\d+)\.(\d+)\.(\d+)", server_version)
+    if server is None or tuple(map(int, server.groups())) < (1, 2, 966):
+        assert os.getenv("LAKESQL_REQUIRE_CROSS_CONNECTION_KILL") != "1", (
+            f"Expected a server with KILL QUERY support, got {server_version}"
+        )
+        print("SKIP: server does not support cross-connection cancellation")
+        return
+
+    url = urlsplit(context.dsn)
+    params = dict(parse_qsl(url.query, keep_blank_values=True))
+    params.update(wait_time_secs="1", page_request_timeout_secs="10")
+    dsn = urlunsplit(url._replace(query=urlencode(params)))
+    target = tidbcloudlake_driver.BlockingLakeClient(dsn).get_conn()
+    try:
+        rows = target.query_iter("SELECT sleep(30)")
+        try:
+            query_id = target.last_query_id()
+            assert query_id, "expected the sleeping query's server-side ID"
+            other = context.client.get_conn()
+            try:
+                other.kill_query(query_id)
+                assert other.last_query_id() is None, (
+                    "KILL must not change last_query_id"
+                )
+                with tc.assertRaisesRegex(Exception, r"(?i)\[1043\].*(cancel|abort)"):
+                    next(rows)
+            finally:
+                other.close()
+        finally:
+            rows.close()
+    finally:
+        target.close()
 
 
 @then("Query should not timeout")

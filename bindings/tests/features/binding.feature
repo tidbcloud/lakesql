@@ -62,6 +62,10 @@ Feature: Lake Driver
         Given A new Lake Driver Client
         Then killQuery should return error for non-existent query ID
 
+    Scenario: Kill a query from another connection
+        Given A new Lake Driver Client
+        Then killQuery from another connection should cancel the query
+
     Scenario: Heartbeat
         Given A new Lake Driver Client
         Then Query should not timeout

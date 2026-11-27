@@ -24,6 +24,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 use tokio::task::{JoinHandle, JoinSet};
 
+mod query_cancel_tests;
+
 struct MockRequest {
     method: String,
     path: String,
@@ -34,6 +36,7 @@ struct MockRequest {
 struct MockReply {
     status: u16,
     body: String,
+    truncated: bool,
     gate: Option<Arc<Notify>>,
 }
 
@@ -42,6 +45,7 @@ impl MockReply {
         Self {
             status: 200,
             body: body.to_string(),
+            truncated: false,
             gate: None,
         }
     }
@@ -184,8 +188,8 @@ async fn handle_connection(
             "Connection: close\r\n\r\n{}"
         ),
         reply.status,
-        reply.body.len(),
-        reply.body
+        reply.body.len() + usize::from(reply.truncated),
+        reply.body,
     );
     // Dropping Pages can deliberately close a pending connection.
     let _ = stream.write_all(response.as_bytes()).await;
@@ -480,6 +484,7 @@ async fn terminal_response_unregisters_before_none_or_drop() {
             // Nonempty terminal pages must release tracking before a caller
             // polls None or drops Pages; neither is allowed to hide the bug.
             assert!(client.queries_need_heartbeat.lock().is_empty());
+            assert!(client.owned_queries.lock().kill_target("q1").is_none());
             client.try_heartbeat().await.unwrap();
             assert!(pages.next().await.is_none());
             drop(pages);
@@ -564,7 +569,7 @@ async fn page_errors_unregister_before_none_or_drop() {
                 "http" => MockReply {
                     status: 404,
                     body: "not found".into(),
-                    gate: None,
+                    ..MockReply::json(Value::Null)
                 },
                 "decode" => MockReply::json(json!({"invalid":"response"})),
                 "query" => {
@@ -604,6 +609,7 @@ async fn early_drop_finalizes_once_on_the_tracked_node() {
     let pages = tracked_pages(&client, false).await;
     drop(pages);
     assert!(client.queries_need_heartbeat.lock().is_empty());
+    assert_eq!(client.owned_queries.lock().is_reading("q1"), Some(false));
     server.wait_for(finalized.notified()).await;
     client.finalize_query("q1");
     client.try_heartbeat().await.unwrap();

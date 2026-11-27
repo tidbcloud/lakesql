@@ -157,6 +157,11 @@ impl Connection {
         params.replace(sql)
     }
 
+    /// Cancel a running REST query by ID. If the query is tracked by this
+    /// connection, use its original HTTP query session. Otherwise, run SQL
+    /// `KILL QUERY` without joining this connection's transaction or changing
+    /// `last_query_id`. Cross-connection cancellation needs server support
+    /// (v1.2.966-nightly or later) and the server's cancellation privileges.
     pub async fn kill_query(&self, query_id: &str) -> Result<()> {
         self.inner.kill_query(query_id).await
     }

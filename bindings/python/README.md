@@ -130,13 +130,23 @@ await conn.query_row("SELECT 1")
 query_id = conn.last_query_id()
 print(f"Query ID: {query_id}")
 
-# Kill a running query (if needed)
+# Cancel a running query by ID, including from another connection
 try:
     await conn.kill_query("some-query-id")
     print("Query killed successfully")
 except Exception as e:
     print(f"Failed to kill query: {e}")
 ```
+
+If the REST connection is tracking the query, `kill_query()` uses its original
+HTTP query session. A query-not-found response before registration is retried
+for up to `wait_time_secs` plus two seconds.
+
+To cancel from another connection, pass the same ID to `other.kill_query()`.
+This uses `KILL QUERY` (server v1.2.966-nightly or newer) and leaves `other`'s
+transaction and `last_query_id()` unchanged. Users can cancel their own queries;
+cancelling another user's query requires global `SUPER`. Error `1053` means no
+running query was found; `1063` means permission denied.
 
 ## Type Mapping
 
