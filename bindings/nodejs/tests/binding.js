@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+const { randomUUID } = require("node:crypto");
 const { Transform } = require("node:stream");
 const { finished, pipeline } = require("node:stream/promises");
 
@@ -472,29 +473,56 @@ Then("killQuery from another connection should cancel the query", { timeout: 600
 
   const targetDsn = new URL(dsn);
   targetDsn.searchParams.set("wait_time_secs", "1");
-  const target = await new Client(targetDsn.toString()).getConn();
+  const suffix = randomUUID().replaceAll("-", "");
+  const table = `kill_txn_${suffix}`;
+  const user = `kill_denied_${suffix}`;
+  const password = randomUUID();
+  const deniedDsn = new URL(dsn);
+  deniedDsn.username = user;
+  deniedDsn.password = password;
+  deniedDsn.pathname = "/";
+
+  const caller = this.conn;
+  let target;
+  let denied;
   try {
-    // One sleeping row: the first response registers the ID without buffering rows.
-    const rows = await target.queryIter("SELECT sleep(30)");
+    await caller.exec(`CREATE TABLE ${table} (n INT) ENGINE=FUSE`);
+    await caller.exec(`CREATE USER '${user}' IDENTIFIED BY '${password}'`);
+    target = await new Client(targetDsn.toString()).getConn();
+    denied = await new Client(deniedDsn.toString()).getConn();
+
+    await caller.exec("BEGIN");
     try {
-      const queryId = target.lastQueryId();
-      assert.ok(queryId, "expected the sleeping query's server-side ID");
-      const other = await this.client.getConn();
+      await caller.exec(`INSERT INTO ${table} VALUES (1)`);
+      const lastQueryId = caller.lastQueryId();
+      await assert.rejects(caller.killQuery(randomUUID()), /\[1053\]/);
+
+      // One sleeping row: the first response registers the ID without buffering rows.
+      const rows = await target.queryIter("SELECT sleep(30)");
       try {
-        await other.killQuery(queryId);
-        assert.equal(other.lastQueryId(), null, "KILL must not change lastQueryId");
+        const queryId = target.lastQueryId();
+        assert.ok(queryId, "expected the sleeping query's server-side ID");
+        await assert.rejects(denied.killQuery(queryId), /\[1063\]/);
+        await caller.killQuery(queryId);
+        assert.equal(caller.lastQueryId(), lastQueryId, "KILL must not change lastQueryId");
         // The native RowIterator resolves to an Error on a query failure.
         const result = await rows.next();
         assert.ok(result instanceof Error, "expected cancellation instead of a row or EOF");
         assert.match(result.message, /\[1043\].*(cancel|abort)/i);
       } finally {
-        await other.close();
+        rows.close();
       }
-    } finally {
-      rows.close();
+      await caller.exec("COMMIT");
+    } catch (error) {
+      await caller.exec("ROLLBACK");
+      throw error;
     }
+    const row = await caller.queryRow(`SELECT COUNT(*) FROM ${table}`);
+    assert.equal(Number(row.values()[0]), 1, "KILL must not abort the caller's transaction");
   } finally {
-    await target.close();
+    await Promise.all([target?.close(), denied?.close()]);
+    await caller.exec(`DROP USER IF EXISTS '${user}'`);
+    await caller.exec(`DROP TABLE IF EXISTS ${table}`);
   }
 });
 

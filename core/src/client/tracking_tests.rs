@@ -36,7 +36,6 @@ struct MockRequest {
 struct MockReply {
     status: u16,
     body: String,
-    headers: Vec<(&'static str, &'static str)>,
     truncated: bool,
     gate: Option<Arc<Notify>>,
 }
@@ -46,7 +45,6 @@ impl MockReply {
         Self {
             status: 200,
             body: body.to_string(),
-            headers: vec![],
             truncated: false,
             gate: None,
         }
@@ -182,16 +180,17 @@ async fn handle_connection(
     if let Some(gate) = reply.gate {
         gate.notified().await;
     }
-    let mut response = format!(
-        "HTTP/1.1 {} Mock\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n",
+    let response = format!(
+        concat!(
+            "HTTP/1.1 {} Mock\r\n",
+            "Content-Length: {}\r\n",
+            "Content-Type: application/json\r\n",
+            "Connection: close\r\n\r\n{}"
+        ),
         reply.status,
         reply.body.len() + usize::from(reply.truncated),
+        reply.body,
     );
-    for (name, value) in reply.headers {
-        response.push_str(&format!("{name}: {value}\r\n"));
-    }
-    response.push_str("\r\n");
-    response.push_str(&reply.body);
     // Dropping Pages can deliberately close a pending connection.
     let _ = stream.write_all(response.as_bytes()).await;
 }
