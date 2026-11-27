@@ -21,10 +21,10 @@ use crate::error::{ConvertError, Result};
 use crate::value::base::GeoValue;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use chrono::{Datelike, NaiveDate};
+use chrono::{DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone as _};
+use chrono_tz::{GapInfo, Tz as TimeZone};
 use ethnum::i256;
 use hex;
-use jiff::{civil::DateTime as JiffDateTime, tz::TimeZone, Zoned};
 use lake_client::schema::{DataType, DecimalDataType, DecimalSize, NumberDataType};
 use lake_client::{BinaryFormat, ResultFormatSettings};
 use serde::Deserialize;
@@ -110,7 +110,7 @@ impl TryFrom<(&DataType, String, &ResultFormatSettings)> for Value {
             }
             DataType::Timestamp => parse_timestamp(v.as_str(), &settings.timezone),
             DataType::TimestampTz => {
-                let t = Zoned::strptime(TIMESTAMP_TIMEZONE_FORMAT, v.as_str())?;
+                let t = DateTime::parse_from_str(v.as_str(), TIMESTAMP_TIMEZONE_FORMAT)?;
                 Ok(Self::TimestampTz(t))
             }
             DataType::Date => Ok(Self::Date(
@@ -330,7 +330,7 @@ impl ValueDecoder {
             reader.read_quoted_text(&mut buf, b'\'')?;
         }
         let v = std::str::from_utf8(&buf)?;
-        let t = Zoned::strptime(TIMESTAMP_TIMEZONE_FORMAT, v)?;
+        let t = DateTime::parse_from_str(v, TIMESTAMP_TIMEZONE_FORMAT)?;
         Ok(Value::TimestampTz(t))
     }
 
@@ -537,13 +537,19 @@ fn collect_binary_token(buffer: &[u8]) -> usize {
 }
 
 fn parse_timestamp(ts_string: &str, tz: &TimeZone) -> Result<Value> {
-    let local = JiffDateTime::strptime(TIMESTAMP_FORMAT, ts_string)?;
-    let dt_with_tz = local.to_zoned(tz.clone()).map_err(|e| {
-        Error::Parsing(format!(
-            "time {ts_string} not exists in timezone {tz:?}: {e}"
-        ))
-    })?;
-    Ok(Value::Timestamp(dt_with_tz))
+    let local = NaiveDateTime::parse_from_str(ts_string, TIMESTAMP_FORMAT)?;
+    // Preserve Jiff's compatible disambiguation: choose the earlier instant in
+    // a fold, and shift forward by the offset change in a gap (not necessarily
+    // one hour). HTTP timestamps have no offset to distinguish a fold.
+    let dt = match tz.from_local_datetime(&local) {
+        LocalResult::Single(dt) | LocalResult::Ambiguous(dt, _) => Some(dt),
+        LocalResult::None => GapInfo::new(&local, tz)
+            .and_then(|gap| gap.begin)
+            .and_then(|(_, offset)| offset.fix().from_local_datetime(&local).single())
+            .map(|dt| dt.with_timezone(tz)),
+    }
+    .ok_or_else(|| Error::Parsing(format!("time {ts_string} not exists in timezone {tz}")))?;
+    Ok(Value::Timestamp(dt))
 }
 
 fn parse_decimal(text: &str, size: DecimalSize) -> Result<NumberValue> {
@@ -694,6 +700,27 @@ mod tests {
             decoder.read_field(&nullable_ty, &mut reader).unwrap(),
             Value::Binary(b"xyz".to_vec())
         );
+    }
+
+    #[test]
+    fn decodes_extended_timestamp_and_preserves_offset() {
+        let ts =
+            parse_timestamp("+10000-01-01 07:59:59.999999", &TimeZone::Asia__Shanghai).unwrap();
+        let Value::Timestamp(ts) = ts else {
+            panic!("expected timestamp")
+        };
+        assert_eq!(ts.timestamp_micros(), 253_402_300_799_999_999);
+        let tz = Value::try_from((
+            &DataType::TimestampTz,
+            "9999-12-31 23:59:59.999999 +0530".to_string(),
+            &ResultFormatSettings::default(),
+        ))
+        .unwrap();
+        let Value::TimestampTz(tz) = tz else {
+            panic!("expected timestamp with offset")
+        };
+        assert_eq!(tz.timestamp_micros(), 253_402_280_999_999_999);
+        assert_eq!(tz.offset().local_minus_utc(), 19_800);
     }
 
     #[test]

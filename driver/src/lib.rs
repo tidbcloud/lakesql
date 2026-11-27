@@ -35,9 +35,7 @@ pub use lake_client::schema::{DataType, DecimalSize, Field, NumberDataType, Sche
 pub use lake_driver_core::error::{Error, Result};
 pub use lake_driver_core::rows::{Row, RowIterator, RowStatsIterator, RowWithStats, ServerStats};
 pub use lake_driver_core::value::Interval;
-pub use lake_driver_core::value::{
-    zoned_to_chrono_datetime, zoned_to_chrono_fixed_offset, NumberValue, Value,
-};
+pub use lake_driver_core::value::{NumberValue, Value};
 
 pub use lake_driver_macros::serde_bend;
 pub use lake_driver_macros::TryFromRow;

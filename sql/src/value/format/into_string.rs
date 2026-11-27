@@ -14,7 +14,7 @@
 
 use crate::_macro_internal::{Error, Value};
 use crate::error::ConvertError;
-use crate::value::base::{date_from_day_count, TIMESTAMP_FORMAT};
+use crate::value::base::{date_from_day_count, TIMESTAMP_FORMAT, TIMESTAMP_TIMEZONE_FORMAT};
 use crate::value::format::display::{display_decimal_128, display_decimal_256};
 use crate::value::NumberValue;
 
@@ -38,7 +38,8 @@ impl TryFrom<Value> for String {
                     .ok_or_else(|| ConvertError::new("date", format!("invalid date value: {d}")))?;
                 Ok(date.format("%Y-%m-%d").to_string())
             }
-            Value::Timestamp(dt) => Ok(dt.strftime(TIMESTAMP_FORMAT).to_string()),
+            Value::Timestamp(dt) => Ok(dt.format(TIMESTAMP_FORMAT).to_string()),
+            Value::TimestampTz(dt) => Ok(dt.format(TIMESTAMP_TIMEZONE_FORMAT).to_string()),
             _ => Err(ConvertError::new("string", format!("{val:?}")).into()),
         }
     }
