@@ -15,9 +15,9 @@
 use crate::auth::{AccessTokenAuth, AccessTokenFileAuth, Auth, BasicAuth, KeyPairAuth};
 use crate::capability::Capability;
 use crate::client_mgr::{GLOBAL_CLIENT_MANAGER, GLOBAL_RUNTIME};
-use crate::error_code::{ErrorCode, ResponseWithErrorCode};
+use crate::error_code::ResponseWithErrorCode;
 use crate::global_cookie_store::GlobalCookieStore;
-use crate::login::{LoginRequest, LoginResponseResult};
+use crate::login::{decode_login_version, LoginRequest};
 use crate::presign::{
     presign_upload_with_options, PresignMode, PresignOptions, PresignedResponse, Reader,
 };
@@ -279,55 +279,10 @@ impl APIClient {
         }
     }
 
-    fn status_error_code(status: StatusCode, code: ErrorCode) -> Error {
-        if status == StatusCode::UNAUTHORIZED {
-            Error::AuthFailure(code)
-        } else {
-            Error::Logic(status, code)
-        }
-    }
-
     fn status_body_to_error(status: StatusCode, body: &[u8]) -> Error {
         match serde_json::from_slice::<ResponseWithErrorCode>(body) {
-            Ok(resp) => Self::status_error_code(status, resp.error),
+            Ok(resp) => Error::from_status_error_code(status, resp.error),
             Err(_) => Error::response_error(status, body),
-        }
-    }
-
-    fn decode_auth_response<'a, T: Deserialize<'a>>(
-        status: StatusCode,
-        body: &'a [u8],
-        kind: RequestKind,
-    ) -> Result<T> {
-        // Authentication responses can contain newly issued tokens that we do not
-        // know yet. Keep machine-readable diagnostics, but never expose response
-        // text, including server error messages or deserializer input values.
-        if status != StatusCode::OK {
-            let error = match serde_json::from_slice::<ResponseWithErrorCode>(body) {
-                Ok(resp) => Self::status_error_code(status, Self::auth_error_code(resp.error.code)),
-                Err(_) => Error::Response {
-                    status,
-                    msg: " authentication response body omitted".to_string(),
-                },
-            };
-            return Err(error.with_context(kind));
-        }
-        serde_json::from_slice(body).map_err(|e| {
-            Error::Decode(format!(
-                "invalid authentication JSON response ({:?}, line {}, column {})",
-                e.classify(),
-                e.line(),
-                e.column()
-            ))
-            .with_context(kind)
-        })
-    }
-
-    fn auth_error_code(code: u16) -> ErrorCode {
-        ErrorCode {
-            code,
-            message: "authentication request failed (server message omitted)".to_string(),
-            detail: None,
         }
     }
 
@@ -1185,29 +1140,20 @@ impl APIClient {
         let response = self
             .query_request_helper(request, true, RequestKind::Login, None)
             .await?;
-        let login =
-            Self::decode_auth_response(response.status, &response.body, RequestKind::Login)?;
-        if let Some(v) = response.headers.get(HEADER_SESSION_ID) {
-            if let Ok(s) = v.to_str() {
-                self.session_id = s.to_string();
-            }
+        let server_version = decode_login_version(response.status, &response.body)?;
+        if let Some(session_id) = response
+            .headers
+            .get(HEADER_SESSION_ID)
+            .and_then(|v| v.to_str().ok())
+        {
+            self.session_id = session_id.to_string();
         }
-
-        match login {
-            LoginResponseResult::Err { error } => {
-                return Err(Error::AuthFailure(Self::auth_error_code(error.code)));
-            }
-            LoginResponseResult::Ok(info) => {
-                let server_version = info.version.parse().map_err(|_| {
-                    Error::Decode("invalid server version in login response".into())
-                        .with_context(RequestKind::Login)
-                })?;
-                self.capability = Capability::from_server_version(&server_version);
-                let session_id = self.session_id.as_str();
-                info!("[session {session_id}] login success, version = {server_version}");
-                self.server_version = Some(server_version);
-            }
-        }
+        self.capability = Capability::from_server_version(&server_version);
+        info!(
+            "[session {}] login success, version = {server_version}",
+            self.session_id
+        );
+        self.server_version = Some(server_version);
         Ok(())
     }
 
@@ -1287,7 +1233,7 @@ impl APIClient {
         Ok(self.auth.wrap(builder)?.build()?)
     }
 
-    pub(crate) fn need_logout(&self) -> bool {
+    fn need_logout(&self) -> bool {
         self.session_state.lock().need_keep_alive.unwrap_or(false)
     }
 
@@ -1423,8 +1369,7 @@ impl APIClient {
             {
                 retries += 1;
                 request.headers_mut().remove(reqwest::header::AUTHORIZATION);
-                let builder =
-                    RequestBuilder::from_parts(self.cli.clone(), clone_request(&request)?);
+                let builder = RequestBuilder::from_parts(self.cli.clone(), request);
                 request = self.auth.wrap(builder)?.build()?;
                 warn!(
                     "retry {}/{} for {} due to: authentication token reloaded, retrying after {} seconds",

@@ -486,14 +486,16 @@ async fn arrow_is_available_with_login_disabled() {
 
 #[tokio::test]
 async fn basic_auth_does_not_use_or_refresh_session_tokens() {
-    let handler: Arc<ResponseHandler> = Arc::new(|idx, req| {
-        match (idx, req.path.as_str()) {
+    let handler: Arc<ResponseHandler> = Arc::new(|idx, req| match (idx, req.path.as_str()) {
         (0, "/v1/session/login?disable_session_token=true") => (
             200,
             "application/json",
             serde_json::json!({
                 "version": "1.2.925-nightly",
-                "tokens": {"session_token": AUTH_RESPONSE_CANARY, "refresh_token": AUTH_RESPONSE_CANARY}
+                "tokens": {
+                    "session_token": AUTH_RESPONSE_CANARY,
+                    "refresh_token": AUTH_RESPONSE_CANARY,
+                }
             })
             .to_string(),
         ),
@@ -510,7 +512,6 @@ async fn basic_auth_does_not_use_or_refresh_session_tokens() {
         ),
         (3, "/v1/session/logout") => (200, "application/json", "{}".into()),
         _ => panic!("unexpected mock request: {req:?}"),
-    }
     });
     let (port, requests, server) = spawn_test_server(handler);
     let dsn = format!("lake://root:@127.0.0.1:{port}/default?sslmode=disable&presign=off&retry_delay_secs=0&retry_count=3");
@@ -700,7 +701,7 @@ async fn query_page_rejects_cross_origin_before_sending_credentials() {
 
 const AUTH_RESPONSE_CANARY: &str = "AUTH_RESPONSE_CANARY";
 
-fn rejected_auth_responses() -> [(u16, &'static str, String); 5] {
+fn rejected_auth_responses() -> [(u16, &'static str, String); 6] {
     let structured_error = serde_json::json!({
         "error": {"code": 3900, "message": AUTH_RESPONSE_CANARY, "detail": AUTH_RESPONSE_CANARY}
     })
@@ -715,6 +716,11 @@ fn rejected_auth_responses() -> [(u16, &'static str, String); 5] {
             200,
             "JSON response",
             serde_json::json!({"version": [AUTH_RESPONSE_CANARY]}).to_string(),
+        ),
+        (
+            200,
+            "invalid server version",
+            serde_json::json!({"version": AUTH_RESPONSE_CANARY}).to_string(),
         ),
         (
             500,

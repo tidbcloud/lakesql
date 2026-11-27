@@ -124,6 +124,14 @@ pub enum Error {
 }
 
 impl Error {
+    pub(crate) fn from_status_error_code(status: StatusCode, code: ErrorCode) -> Self {
+        if status == StatusCode::UNAUTHORIZED {
+            Self::AuthFailure(code)
+        } else {
+            Self::Logic(status, code)
+        }
+    }
+
     pub fn response_error(status: StatusCode, body: &[u8]) -> Self {
         Self::Response {
             status,

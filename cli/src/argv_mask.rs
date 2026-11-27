@@ -33,10 +33,6 @@ use std::ptr;
 use clap::Command;
 use percent_encoding::percent_decode;
 
-/// Connection parameters (DSN query or `--set key=value`) that carry secrets.
-// Also scrub legacy DSNs before the driver rejects the removed option.
-const SENSITIVE_KEYS: &[&str] = &["access_token", "session_token"];
-
 #[derive(Clone, Copy)]
 enum Kind {
     /// The whole value is a secret.
@@ -174,11 +170,6 @@ fn mask_ranges(value: &[u8], ranges: &[Range<usize>]) -> Vec<u8> {
     out
 }
 
-fn is_sensitive_key(key: &[u8]) -> bool {
-    let key = percent_decode(key).decode_utf8_lossy();
-    SENSITIVE_KEYS.contains(&key.as_ref())
-}
-
 /// Byte ranges of the password and sensitive query values in a DSN like
 /// `lake://user:pass@host:8000/db?access_token=xxx`.
 ///
@@ -235,10 +226,12 @@ fn normalized_dsn_secret_ranges(dsn: &[u8]) -> Vec<Range<usize>> {
     ranges
 }
 
-/// Range of the value in `key=value` when `key` is sensitive.
+/// Range of the access token value in `key=value`, if present.
 fn key_value_secret_ranges(pair: &[u8]) -> Vec<Range<usize>> {
     match pair.iter().position(|&b| b == b'=') {
-        Some(eq) if is_sensitive_key(&pair[..eq]) => vec![eq + 1..pair.len()],
+        Some(eq) if percent_decode(&pair[..eq]).eq(b"access_token".iter().copied()) => {
+            vec![eq + 1..pair.len()]
+        }
         _ => vec![],
     }
 }
@@ -450,18 +443,16 @@ mod tests {
     fn masks_dsn_with_url_stripped_whitespace() {
         // `url::Url::parse` drops tab/CR/LF, so these still set the secrets.
         for ws in ["\t", "\r", "\n"] {
-            let dsn = format!("lake://u:p{ws}w@h/?access_{ws}token=sec{ws}ret&{ws}session_token=s");
+            let dsn = format!("lake://u:p{ws}w@h/?access_{ws}token=sec{ws}ret");
             let parsed = ConnectionArgs::from_dsn(&dsn).unwrap();
             assert_eq!(parsed.password.inner(), "pw");
             assert_eq!(parsed.args["access_token"], "secret");
-            assert_eq!(parsed.args["session_token"], "s");
             assert_eq!(
                 masked(&["lakesql", "--dsn", &dsn]),
                 [
                     "lakesql",
                     "--dsn",
-                    format!("lake://u:***@h/?access_{ws}token=*******&{ws}session_token=*")
-                        .as_str()
+                    format!("lake://u:***@h/?access_{ws}token=*******").as_str()
                 ]
             );
         }
@@ -477,7 +468,7 @@ mod tests {
                 "lakesql",
                 "--set",
                 "access_token=t",
-                "--set=session_token=s",
+                "--set=access_token=ab",
                 "--set",
                 "role=r"
             ]),
@@ -485,7 +476,7 @@ mod tests {
                 "lakesql",
                 "--set",
                 "access_token=*",
-                "--set=session_token=*",
+                "--set=access_token=**",
                 "--set",
                 "role=r"
             ]

@@ -14,8 +14,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::error_code::ErrorCode;
+use crate::error::{Error, RequestKind, Result};
+use crate::error_code::{ErrorCode, ResponseWithErrorCode};
 use crate::session::SessionState;
+use reqwest::StatusCode;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug)]
@@ -44,13 +47,50 @@ impl From<&SessionState> for LoginRequest {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct LoginResponse {
-    pub version: String,
-}
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[serde(untagged)]
-pub enum LoginResponseResult {
-    Ok(LoginResponse),
+enum LoginResponse {
+    Ok { version: String },
     Err { error: ErrorCode },
+}
+
+pub(crate) fn decode_login_version(status: StatusCode, body: &[u8]) -> Result<Version> {
+    // A server may still send credentials or echo sensitive values in an error.
+    // Keep the HTTP status, server error code, and decode location, not the text.
+    if status != StatusCode::OK {
+        let error = match serde_json::from_slice::<ResponseWithErrorCode>(body) {
+            Ok(resp) => {
+                Error::from_status_error_code(status, sanitized_auth_error(resp.error.code))
+            }
+            Err(_) => Error::Response {
+                status,
+                msg: " authentication response body omitted".to_string(),
+            },
+        };
+        return Err(error.with_context(RequestKind::Login));
+    }
+    let response = serde_json::from_slice(body).map_err(|e| {
+        Error::Decode(format!(
+            "invalid authentication JSON response ({:?}, line {}, column {})",
+            e.classify(),
+            e.line(),
+            e.column()
+        ))
+        .with_context(RequestKind::Login)
+    })?;
+    match response {
+        LoginResponse::Ok { version } => version.parse().map_err(|_| {
+            Error::Decode("invalid server version in login response".into())
+                .with_context(RequestKind::Login)
+        }),
+        LoginResponse::Err { error } => Err(Error::AuthFailure(sanitized_auth_error(error.code))),
+    }
+}
+
+fn sanitized_auth_error(code: u16) -> ErrorCode {
+    ErrorCode {
+        code,
+        message: "authentication request failed (server message omitted)".to_string(),
+        detail: None,
+    }
 }
