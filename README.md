@@ -269,8 +269,6 @@ Examples:
 | `page_request_timeout_secs` | Timeout for a single page request.                                                                                                                               | `30`      |
 | `presign`                   | Whether to enable presign for data loading, available arguments are `auto`/`detect`/`on`/`off`. Default to `auto` which only enable presign for `TiDB Cloud` | `auto`    |
 
-Remove `max_rows_in_buffer` and `max_rows_per_page` from existing DSNs to use the server's defaults. Replace `body_format` with `query_result_format`.
-
 Remove `session_token` from REST DSNs. REST requests use the configured credentials directly. After changing your own password over Basic Auth, reconnect with the new password.
 
 #### FlightSQL Client
