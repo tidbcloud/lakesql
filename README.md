@@ -271,6 +271,8 @@ Examples:
 
 Remove `max_rows_in_buffer` and `max_rows_per_page` from existing DSNs to use the server's defaults. Replace `body_format` with `query_result_format`.
 
+Remove `session_token` from REST DSNs. REST requests use the configured credentials directly. After changing your own password over Basic Auth, reconnect with the new password.
+
 #### FlightSQL Client
 
 | Arg                         | Description                                                               |

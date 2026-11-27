@@ -485,41 +485,48 @@ async fn arrow_is_available_with_login_disabled() {
 }
 
 #[tokio::test]
-async fn retry_401_reapplies_refreshed_session_token() {
-    let old = "old-test-token";
-    let new = "new-test-token";
-    let refresh = "test-refresh-token";
-    let handler: Arc<ResponseHandler> = Arc::new(move |idx, req| {
-        let body = match (idx, req.path.as_str(), req.authorization.as_deref()) {
-            (0, "/v1/session/login", _) => serde_json::json!({
+async fn basic_auth_does_not_use_or_refresh_session_tokens() {
+    let handler: Arc<ResponseHandler> = Arc::new(|idx, req| {
+        match (idx, req.path.as_str()) {
+        (0, "/v1/session/login?disable_session_token=true") => (
+            200,
+            "application/json",
+            serde_json::json!({
                 "version": "1.2.925-nightly",
-                "tokens": {"session_token": old, "refresh_token": refresh}
+                "tokens": {"session_token": AUTH_RESPONSE_CANARY, "refresh_token": AUTH_RESPONSE_CANARY}
             })
             .to_string(),
-            (1, "/v1/query", Some("Bearer old-test-token")) => {
-                return (
-                    401,
-                    "application/json",
-                    logic_error_json_body(5101, "session token expired"),
-                );
-            }
-            (2, "/v1/session/refresh", Some("Bearer test-refresh-token")) => serde_json::json!({
-                "tokens": {"session_token": new, "refresh_token": refresh}
-            })
-            .to_string(),
-            (3, "/v1/query", Some("Bearer new-test-token")) => ok_query_response("42"),
-            (4, "/v1/session/logout", Some("Bearer new-test-token")) => "{}".to_string(),
-            _ => panic!("unexpected mock request: {req:?}"),
-        };
-        (200, "application/json", body)
+        ),
+        (1, "/v1/query") => {
+            let mut body: serde_json::Value =
+                serde_json::from_str(&ok_query_response("42")).unwrap();
+            body["session"] = serde_json::json!({"need_keep_alive": true});
+            (200, "application/json", body.to_string())
+        }
+        (2, "/v1/query") => (
+            401,
+            "application/json",
+            logic_error_json_body(5101, "session token expired"),
+        ),
+        (3, "/v1/session/logout") => (200, "application/json", "{}".into()),
+        _ => panic!("unexpected mock request: {req:?}"),
+    }
     });
     let (port, requests, server) = spawn_test_server(handler);
-    let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_delay_secs=0&retry_count=1");
+    let dsn = format!("lake://root:@127.0.0.1:{port}/default?sslmode=disable&presign=off&retry_delay_secs=0&retry_count=3");
     let client = APIClient::new(&dsn, None).await.unwrap();
     let response = client.query_all("select 42", None).await.unwrap();
     assert_eq!(response.data, vec![vec![Some("42".to_string())]]);
+    let error = client.query_all("select 1", None).await.err().unwrap();
+    assert!(matches!(error, Error::AuthFailure(ec) if ec.code == 5101));
     client.close().await;
-    assert_eq!(requests.lock().unwrap().len(), 5);
+
+    let requests = requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[3].path, "/v1/session/logout");
+    assert!(requests
+        .iter()
+        .all(|req| req.authorization.as_deref() == Some("Basic cm9vdDo=")));
     server.abort();
 }
 
@@ -702,12 +709,12 @@ fn rejected_auth_responses() -> [(u16, &'static str, String); 5] {
         (
             200,
             "JSON response",
-            format!("{{\"tokens\":\"{AUTH_RESPONSE_CANARY}\""),
+            format!("{{\"version\":\"{AUTH_RESPONSE_CANARY}\""),
         ),
         (
             200,
             "JSON response",
-            serde_json::json!({"tokens": AUTH_RESPONSE_CANARY}).to_string(),
+            serde_json::json!({"version": [AUTH_RESPONSE_CANARY]}).to_string(),
         ),
         (
             500,
@@ -730,66 +737,18 @@ fn assert_auth_diagnostic(error: &Error, expected: &str) {
 async fn login_does_not_expose_auth_response_text() {
     for (status, expected, body) in rejected_auth_responses() {
         let handler: Arc<ResponseHandler> = Arc::new(move |_, req| {
-            assert_eq!(req.path, "/v1/session/login");
+            assert_eq!(req.path, "/v1/session/login?disable_session_token=true");
             (status, "application/json", body.clone())
         });
         let (port, requests, server) = spawn_test_server(handler);
-        let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_count=1");
+        let dsn =
+            format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&retry_count=1");
         let error = APIClient::new(&dsn, None)
             .await
             .err()
             .expect("login must fail");
         assert_auth_diagnostic(&error, expected);
         assert_eq!(requests.lock().unwrap().len(), 1);
-        server.abort();
-    }
-}
-
-#[tokio::test]
-async fn refresh_does_not_expose_auth_response_text() {
-    let legacy_flat_response = (
-        200,
-        "JSON response",
-        serde_json::json!({
-            "session_token": AUTH_RESPONSE_CANARY,
-            "refresh_token": AUTH_RESPONSE_CANARY,
-        })
-        .to_string(),
-    );
-    for (status, expected, body) in rejected_auth_responses()
-        .into_iter()
-        .chain([legacy_flat_response])
-    {
-        let handler: Arc<ResponseHandler> = Arc::new(move |_, req| match req.path.as_str() {
-            "/v1/session/login" => (
-                200,
-                "application/json",
-                serde_json::json!({
-                    "version": "1.2.900",
-                    "tokens": {"session_token": "mock-session", "refresh_token": "mock-refresh"}
-                })
-                .to_string(),
-            ),
-            "/v1/query" => (
-                401,
-                "application/json",
-                logic_error_json_body(5101, "expired"),
-            ),
-            "/v1/session/refresh" => (status, "application/json", body.clone()),
-            "/v1/session/logout" => (200, "application/json", "{}".to_string()),
-            path => panic!("unexpected path: {path}"),
-        });
-        let (port, requests, server) = spawn_test_server(handler);
-        let dsn = format!("lake://127.0.0.1:{port}/default?sslmode=disable&presign=off&session_token=enable&retry_count=1");
-        let client = APIClient::new(&dsn, None).await.unwrap();
-        let error = client
-            .query_all("select 42", None)
-            .await
-            .err()
-            .expect("refresh must fail");
-        assert_auth_diagnostic(&error, expected);
-        assert_eq!(requests.lock().unwrap().len(), 3);
-        client.close().await;
         server.abort();
     }
 }

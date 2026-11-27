@@ -34,6 +34,7 @@ use clap::Command;
 use percent_encoding::percent_decode;
 
 /// Connection parameters (DSN query or `--set key=value`) that carry secrets.
+// Also scrub legacy DSNs before the driver rejects the removed option.
 const SENSITIVE_KEYS: &[&str] = &["access_token", "session_token"];
 
 #[derive(Clone, Copy)]
