@@ -14,11 +14,11 @@
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::types::{ConnectionInfo, DriverError, Row, RowIterator, ServerStats, VERSION};
 use crate::utils::{to_sql_params, wait_for_future};
-use lake_driver::{LoadMethod, SchemaRef};
+use lake_driver::{LoadMethod, RowWithStats, SchemaRef};
 use pyo3::exceptions::{PyAttributeError, PyException, PyStopIteration};
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{prelude::*, IntoPyObjectExt};
@@ -239,6 +239,8 @@ impl BlockingLakeConnection {
 pub struct BlockingLakeCursor {
     conn: Arc<lake_driver::Connection>,
     rows: Option<Arc<Mutex<lake_driver::RowIterator>>>,
+    stats: Arc<RwLock<Option<lake_driver::ServerStats>>>,
+    rowcount_mode: RowcountMode,
     // buffer is used to store only the first row after execute
     buffer: Vec<Row>,
     schema: Option<SchemaRef>,
@@ -250,6 +252,8 @@ impl BlockingLakeCursor {
         Self {
             conn: Arc::new(conn),
             rows: None,
+            stats: Arc::new(RwLock::new(None)),
+            rowcount_mode: RowcountMode::Unknown,
             buffer: Vec::new(),
             schema: None,
             closed: false,
@@ -260,9 +264,43 @@ impl BlockingLakeCursor {
 impl BlockingLakeCursor {
     fn reset(&mut self) {
         self.rows = None;
+        *self.stats.write().unwrap() = None;
+        self.rowcount_mode = RowcountMode::Unknown;
         self.buffer.clear();
         self.schema = None;
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum RowcountMode {
+    #[default]
+    Unknown,
+    Affected,
+}
+
+impl RowcountMode {
+    fn rowcount(self, stats: Option<&lake_driver::ServerStats>) -> i64 {
+        match self {
+            RowcountMode::Affected => stats.map(|stats| stats.write_rows as i64).unwrap_or(-1),
+            RowcountMode::Unknown => -1,
+        }
+    }
+}
+
+fn capture_stats(
+    rows: lake_driver::RowStatsIterator,
+    stats: Arc<RwLock<Option<lake_driver::ServerStats>>>,
+) -> lake_driver::RowIterator {
+    let schema = rows.schema();
+    let rows = rows.filter_map(move |result| match result {
+        Ok(RowWithStats::Row(row)) => Some(Ok(row)),
+        Ok(RowWithStats::Stats(value)) => {
+            *stats.write().unwrap() = Some(value);
+            None
+        }
+        Err(error) => Some(Err(error)),
+    });
+    lake_driver::RowIterator::new(schema, Box::pin(rows))
 }
 
 #[pymethods]
@@ -299,10 +337,15 @@ impl BlockingLakeCursor {
         }
     }
 
-    /// Not supported currently
     #[getter]
     pub fn rowcount(&self, _py: Python) -> i64 {
-        -1
+        self.rowcount_mode
+            .rowcount(self.stats.read().unwrap().as_ref())
+    }
+
+    #[getter]
+    pub fn stats(&self) -> Option<ServerStats> {
+        self.stats.read().unwrap().clone().map(ServerStats::new)
     }
 
     pub fn close(&mut self, py: Python) -> PyResult<()> {
@@ -333,19 +376,28 @@ impl BlockingLakeCursor {
 
         self.reset();
         let conn = self.conn.clone();
+        let cursor_stats = self.stats.clone();
         // fetch first row after execute
         // then we could finish the query directly if there's no result
         let params = to_sql_params(params);
-        let (first, rows) = wait_for_future(py, async move {
-            let mut rows = if params.is_empty() {
-                conn.query_iter(&operation).await?
+        let (rowcount_mode, first, rows) = wait_for_future(py, async move {
+            let query = conn.query(&operation);
+            let rowcount_mode = if query.is_dml() {
+                RowcountMode::Affected
             } else {
-                conn.query(&operation).bind(params).iter().await?
+                RowcountMode::Unknown
             };
+            let rows = if params.is_empty() {
+                query.iter_ext().await?
+            } else {
+                query.bind(params).iter_ext().await?
+            };
+            let mut rows = capture_stats(rows, cursor_stats);
             let first = rows.next().await.transpose()?;
-            Ok::<_, lake_driver::Error>((first, rows))
+            Ok::<_, lake_driver::Error>((rowcount_mode, first, rows))
         })
         .map_err(DriverError::new)?;
+        self.rowcount_mode = rowcount_mode;
         if let Some(first) = first {
             self.buffer.push(Row::new(first));
         }
@@ -377,6 +429,8 @@ impl BlockingLakeCursor {
                         .map_err(DriverError::new)
                 })?;
                 let result = stats.write_rows.into_pyobject(py)?;
+                self.rowcount_mode = RowcountMode::Affected;
+                *self.stats.write().unwrap() = Some(stats);
                 return Ok(result.into());
             } else {
                 return Err(PyAttributeError::new_err(
@@ -522,5 +576,54 @@ fn to_csv_field(v: Bound<PyAny>) -> PyResult<String> {
             }
         }
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lake_driver::{RowStatsIterator, Schema, ServerStats};
+
+    #[tokio::test]
+    async fn test_capture_stats_filters_stats_and_keeps_latest_snapshot() {
+        let schema = Arc::new(Schema::default());
+        let items = vec![
+            Ok(RowWithStats::Stats(ServerStats {
+                write_rows: 1,
+                ..Default::default()
+            })),
+            Ok(RowWithStats::Row(lake_driver::Row::new(
+                schema.clone(),
+                vec![],
+            ))),
+            Ok(RowWithStats::Stats(ServerStats {
+                write_rows: 2,
+                ..Default::default()
+            })),
+        ];
+        let rows = RowStatsIterator::new(schema, Box::pin(tokio_stream::iter(items)));
+        let stats = Arc::new(RwLock::new(None));
+        let mut rows = capture_stats(rows, stats.clone());
+
+        assert!(rows.next().await.transpose().unwrap().is_some());
+        assert!(rows.next().await.transpose().unwrap().is_none());
+        assert_eq!(stats.read().unwrap().as_ref().unwrap().write_rows, 2);
+    }
+
+    #[test]
+    fn test_rowcount_mode() {
+        let zero = ServerStats {
+            write_rows: 0,
+            ..Default::default()
+        };
+        let positive = ServerStats {
+            write_rows: 3,
+            ..Default::default()
+        };
+
+        assert_eq!(RowcountMode::Unknown.rowcount(Some(&zero)), -1);
+        assert_eq!(RowcountMode::Affected.rowcount(None), -1);
+        assert_eq!(RowcountMode::Affected.rowcount(Some(&zero)), 0);
+        assert_eq!(RowcountMode::Affected.rowcount(Some(&positive)), 3);
     }
 }
