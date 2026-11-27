@@ -457,9 +457,15 @@ Then("killQuery should return error for non-existent query ID", async function (
 });
 
 Then("killQuery from another connection should cancel the query", { timeout: 60000 }, async function () {
-  const version = (await this.conn.version()).match(/v(\d+)\.(\d+)\.(\d+)/);
+  const serverVersion = await this.conn.version();
+  const version = serverVersion.match(/v(\d+)\.(\d+)\.(\d+)/);
   const [major, minor, patch] = version?.slice(1).map(Number) ?? [];
   if (!version || !(major > 1 || (major === 1 && (minor > 2 || (minor === 2 && patch >= 966))))) {
+    assert.notEqual(
+      process.env.LAKESQL_REQUIRE_CROSS_CONNECTION_KILL,
+      "1",
+      `Expected a server with KILL QUERY support, got ${serverVersion}`,
+    );
     console.log("SKIP: server does not support cross-connection cancellation");
     return;
   }

@@ -132,6 +132,10 @@ jobs:
     permissions:
       contents: read
       packages: read
+    env:
+      LAKESQL_QUERY_VERSION: v1.2.966-nightly
+      LAKESQL_META_VERSION: v1.2.966-nightly
+      LAKESQL_REQUIRE_CROSS_CONNECTION_KILL: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -153,9 +157,6 @@ jobs:
           password: ${{ github.token }}
       - name: Prepare
         working-directory: tests
-        env:
-          LAKESQL_QUERY_VERSION: v1.2.960-nightly # current use upstream(https://github.com/databendlabs/databend) version
-          LAKESQL_META_VERSION: v1.2.960-nightly # current use upstream(https://github.com/databendlabs/databend) version
         run: make up
       - name: Download artifact
         uses: actions/download-artifact@v8

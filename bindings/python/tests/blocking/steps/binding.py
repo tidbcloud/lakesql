@@ -471,8 +471,12 @@ def _(context):
 
 @then("killQuery from another connection should cancel the query")
 def _(context):
-    server = re.search(r"v(\d+)\.(\d+)\.(\d+)", context.conn.version())
+    server_version = context.conn.version()
+    server = re.search(r"v(\d+)\.(\d+)\.(\d+)", server_version)
     if server is None or tuple(map(int, server.groups())) < (1, 2, 966):
+        assert os.getenv("LAKESQL_REQUIRE_CROSS_CONNECTION_KILL") != "1", (
+            f"Expected a server with KILL QUERY support, got {server_version}"
+        )
         print("SKIP: server does not support cross-connection cancellation")
         return
 

@@ -124,4 +124,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - run: make -C tests test-bindings-nodejs "LAKESQL_META_VERSION=v1.2.960-nightly" "LAKESQL_QUERY_VERSION=v1.2.960-nightly"
+      - run: make -C tests test-bindings-nodejs
+        env:
+          LAKESQL_QUERY_VERSION: v1.2.966-nightly
+          LAKESQL_META_VERSION: v1.2.966-nightly
+          LAKESQL_REQUIRE_CROSS_CONNECTION_KILL: "1"
