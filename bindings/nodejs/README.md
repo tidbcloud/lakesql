@@ -76,6 +76,17 @@ ID unless another query has already updated it.
 The value is shared by all queries on the connection. A concurrent query can
 change it. It is `null` before the first query and always `null` for FlightSQL.
 
+Use `await conn.killQuery(queryId)` to cancel a running REST query. If this
+connection is tracking the query, the driver uses its original HTTP query
+session. A query-not-found response before registration is retried for up to
+`wait_time_secs` plus two seconds.
+
+To cancel from another connection, pass the same ID to `other.killQuery(queryId)`.
+This uses `KILL QUERY` (server v1.2.966-nightly or newer) and leaves `other`'s
+transaction and `lastQueryId()` unchanged. The server lets users cancel their
+own queries and requires global `SUPER` to cancel another user's query. Error
+`1053` means no running query was found; `1063` means permission denied.
+
 ## Type Mapping
 
 [TiDB Cloud Lake Types](https://docs.tidbcloud.com/)

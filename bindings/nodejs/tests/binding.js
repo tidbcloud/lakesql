@@ -456,6 +456,42 @@ Then("killQuery should return error for non-existent query ID", async function (
   }
 });
 
+Then("killQuery from another connection should cancel the query", { timeout: 60000 }, async function () {
+  const version = (await this.conn.version()).match(/v(\d+)\.(\d+)\.(\d+)/);
+  const [major, minor, patch] = version?.slice(1).map(Number) ?? [];
+  if (!version || !(major > 1 || (major === 1 && (minor > 2 || (minor === 2 && patch >= 966))))) {
+    console.log("SKIP: server does not support cross-connection cancellation");
+    return;
+  }
+
+  const targetDsn = new URL(dsn);
+  targetDsn.searchParams.set("wait_time_secs", "1");
+  const target = await new Client(targetDsn.toString()).getConn();
+  try {
+    // One sleeping row: the first response registers the ID without buffering rows.
+    const rows = await target.queryIter("SELECT sleep(30)");
+    try {
+      const queryId = target.lastQueryId();
+      assert.ok(queryId, "expected the sleeping query's server-side ID");
+      const other = await this.client.getConn();
+      try {
+        await other.killQuery(queryId);
+        assert.equal(other.lastQueryId(), null, "KILL must not change lastQueryId");
+        // The native RowIterator resolves to an Error on a query failure.
+        const result = await rows.next();
+        assert.ok(result instanceof Error, "expected cancellation instead of a row or EOF");
+        assert.match(result.message, /\[1043\].*(cancel|abort)/i);
+      } finally {
+        await other.close();
+      }
+    } finally {
+      rows.close();
+    }
+  } finally {
+    await target.close();
+  }
+});
+
 Then("Query should not timeout", { timeout: 30000 }, async function () {
   const rowsBeforeSleep = 10000;
 

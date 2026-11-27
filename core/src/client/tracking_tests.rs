@@ -24,6 +24,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 use tokio::task::{JoinHandle, JoinSet};
 
+mod query_cancel_tests;
+
 struct MockRequest {
     method: String,
     path: String,
@@ -33,7 +35,10 @@ struct MockRequest {
 
 struct MockReply {
     status: u16,
-    body: String,
+    body: Vec<u8>,
+    content_type: &'static str,
+    headers: Vec<(&'static str, &'static str)>,
+    truncated: bool,
     gate: Option<Arc<Notify>>,
 }
 
@@ -41,7 +46,10 @@ impl MockReply {
     fn json(body: Value) -> Self {
         Self {
             status: 200,
-            body: body.to_string(),
+            body: serde_json::to_vec(&body).unwrap(),
+            content_type: "application/json",
+            headers: vec![],
+            truncated: false,
             gate: None,
         }
     }
@@ -176,19 +184,19 @@ async fn handle_connection(
     if let Some(gate) = reply.gate {
         gate.notified().await;
     }
-    let response = format!(
-        concat!(
-            "HTTP/1.1 {} Mock\r\n",
-            "Content-Length: {}\r\n",
-            "Content-Type: application/json\r\n",
-            "Connection: close\r\n\r\n{}"
-        ),
+    let mut response = format!(
+        "HTTP/1.1 {} Mock\r\nContent-Length: {}\r\nContent-Type: {}\r\nConnection: close\r\n",
         reply.status,
-        reply.body.len(),
-        reply.body
+        reply.body.len() + usize::from(reply.truncated),
+        reply.content_type,
     );
+    for (name, value) in reply.headers {
+        response.push_str(&format!("{name}: {value}\r\n"));
+    }
+    response.push_str("\r\n");
     // Dropping Pages can deliberately close a pending connection.
     let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.write_all(&reply.body).await;
 }
 
 struct MockServer {
@@ -563,8 +571,8 @@ async fn page_errors_unregister_before_none_or_drop() {
             match failure {
                 "http" => MockReply {
                     status: 404,
-                    body: "not found".into(),
-                    gate: None,
+                    body: b"not found".to_vec(),
+                    ..MockReply::json(Value::Null)
                 },
                 "decode" => MockReply::json(json!({"invalid":"response"})),
                 "query" => {

@@ -181,6 +181,7 @@ impl Stream for Pages {
                     self.next_page_future = None;
                     if self.next_uri.is_none() {
                         self.client.unregister_query_for_heartbeat(&self.query_id);
+                        self.client.forget_owned_query(&self.query_id);
                     }
                     if resp.data.is_empty() && !self.need_progress {
                         self.poll_next(cx)
@@ -194,6 +195,7 @@ impl Stream for Pages {
                     self.next_page_future = None;
                     self.next_uri = None;
                     self.client.unregister_query_for_heartbeat(&self.query_id);
+                    self.client.release_owned_query(&self.query_id);
                     Poll::Ready(Some(Err(e)))
                 }
                 Poll::Pending => Poll::Pending,
@@ -217,6 +219,8 @@ impl Stream for Pages {
 
 impl Drop for Pages {
     fn drop(&mut self) {
+        // The query may still be running, but this result no longer pins it.
+        self.client.release_owned_query(&self.query_id);
         if let Some(uri) = &self.next_uri {
             if uri.contains("/page/") || self.next_page_future.is_none() {
                 debug!("Dropping pages for {}", self.query_id);

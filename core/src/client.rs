@@ -74,8 +74,12 @@ const CONTENT_TYPE_ARROW: &str = "application/vnd.apache.arrow.stream";
 const CONTENT_TYPE_ARROW_OR_JSON: &str = "application/vnd.apache.arrow.stream";
 const DEFAULT_USERNAME: &str = "root";
 
+mod owned_queries;
+mod query_cancel;
 #[cfg(test)]
 mod query_id_tests;
+
+use owned_queries::{FirstOutcome, OwnedQueries};
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     let version = option_env!("CARGO_PKG_VERSION").unwrap_or("unknown");
@@ -119,6 +123,8 @@ struct QuerySubmission<'a> {
 
 impl<'a> QuerySubmission<'a> {
     fn new(client: &'a APIClient, query_id: String) -> Self {
+        // Own the provisional ID before publishing it to last_query_id().
+        client.owned_queries.lock().submission_started(&query_id);
         {
             let mut state = client.last_query_id.lock();
             let previous_id = state.current.replace(query_id.clone());
@@ -144,6 +150,16 @@ impl<'a> QuerySubmission<'a> {
 
 impl Drop for QuerySubmission<'_> {
     fn drop(&mut self) {
+        self.rollback_query_id();
+        self.client
+            .owned_queries
+            .lock()
+            .submission_ended(&self.query_id, self.may_have_reached_server);
+    }
+}
+
+impl QuerySubmission<'_> {
+    fn rollback_query_id(&self) {
         let mut state = self.client.last_query_id.lock();
         let Some(previous_id) = state.pending.remove(&self.query_id) else {
             return;
@@ -197,6 +213,7 @@ pub struct APIClient {
     presign: Mutex<PresignMode>,
     last_node_id: Mutex<Option<String>>,
     last_query_id: Mutex<LastQueryId>,
+    owned_queries: Mutex<OwnedQueries>,
 
     capability: Capability,
 
@@ -744,7 +761,8 @@ impl APIClient {
                 Some(&mut submission),
             )
             .await?;
-        self.handle_page(response, true).await
+        // Without a decoded response, keep ownership under the submitted ID.
+        self.handle_page(response, Some(&query_id)).await
     }
 
     fn is_arrow_data(headers: &HeaderMap) -> bool {
@@ -759,8 +777,9 @@ impl APIClient {
     async fn handle_page(
         &self,
         response: HttpResponseData,
-        is_first: bool,
+        submitted_id: Option<&str>,
     ) -> Result<(QueryResponse, Vec<RecordBatch>)> {
+        let is_first = submitted_id.is_some();
         let status = response.status;
         if status != StatusCode::OK {
             let error = Self::status_body_to_error(status, &response.body);
@@ -779,34 +798,55 @@ impl APIClient {
                 self.route_hint.set(route_hint.to_str().unwrap_or_default());
             }
         }
-        let mut body = response.body;
-        let mut batches = vec![];
-        if is_arrow_data {
+        let mut reader = None;
+        let resp: QueryResponse = if is_arrow_data {
             if is_first {
                 debug!("received arrow data");
             }
-            let cursor = std::io::Cursor::new(body.as_ref());
-            let reader = StreamReader::try_new(cursor, None)
+            let cursor = std::io::Cursor::new(response.body.as_ref());
+            let stream = StreamReader::try_new(cursor, None)
                 .map_err(|e| Error::Decode(format!("failed to decode arrow stream: {e}")))?;
-            let schema = reader.schema();
-            let json_body = if let Some(json_resp) = schema.metadata.get("response_header") {
-                bytes::Bytes::copy_from_slice(json_resp.as_bytes())
-            } else {
+            let schema = stream.schema();
+            let Some(header) = schema.metadata.get("response_header") else {
                 return Err(Error::Decode(
                     "missing response_header metadata in arrow payload".to_string(),
                 ));
             };
-            for batch in reader {
-                let batch = batch
-                    .map_err(|e| Error::Decode(format!("failed to decode arrow batch: {e}")))?;
-                batches.push(batch);
-            }
-            body = json_body
+            reader = Some(stream);
+            json_from_slice(header.as_bytes())?
+        } else {
+            json_from_slice(&response.body)?
         };
-        let resp: QueryResponse = json_from_slice(&body)?;
-        if is_first {
-            // The server or gateway may replace the ID, including on SQL errors.
+        if let Some(submitted_id) = submitted_id {
+            let outcome = if resp.error.is_none() && resp.next_uri.is_some() {
+                FirstOutcome::Running {
+                    query_id: &resp.id,
+                    node_id: resp.node_id.clone(),
+                }
+            } else {
+                FirstOutcome::Finished
+            };
+            // Record the server-side ID before publishing it, even if an Arrow
+            // batch turns out corrupt or the server returned a SQL error.
+            self.owned_queries
+                .lock()
+                .first_response(submitted_id, outcome);
             self.set_last_query_id(Some(resp.id.clone()));
+        }
+        let mut batches = vec![];
+        if let Some(reader) = reader {
+            for batch in reader {
+                match batch {
+                    Ok(batch) => batches.push(batch),
+                    Err(e) => {
+                        if is_first {
+                            // No Pages will be built, but the query may still run.
+                            self.release_owned_query(&resp.id);
+                        }
+                        return Err(Error::Decode(format!("failed to decode arrow batch: {e}")));
+                    }
+                }
+            }
         }
         self.handle_session(&resp.session).await;
         if let Some(err) = &resp.error {
@@ -827,6 +867,24 @@ impl APIClient {
         next_uri: &str,
         node_id: &Option<String>,
     ) -> Result<(QueryResponse, Vec<RecordBatch>)> {
+        let response = self
+            .send_page_request(
+                query_id,
+                next_uri,
+                node_id,
+                self.query_result_format == "arrow",
+            )
+            .await?;
+        self.handle_page(response, None).await
+    }
+
+    async fn send_page_request(
+        &self,
+        query_id: &str,
+        next_uri: &str,
+        node_id: &Option<String>,
+        accept_arrow: bool,
+    ) -> Result<HttpResponseData> {
         let endpoint = self.endpoint.join(next_uri)?;
         if endpoint.origin() != self.endpoint.origin() {
             return Err(Error::BadArgument(
@@ -835,7 +893,7 @@ impl APIClient {
         }
         info!("query page");
         let mut headers = self.make_headers(Some(query_id))?;
-        if self.query_result_format == "arrow" {
+        if accept_arrow {
             headers.insert(ACCEPT, HeaderValue::from_static(CONTENT_TYPE_ARROW_OR_JSON));
         }
         let builder = self.cli.get(endpoint);
@@ -849,14 +907,8 @@ impl APIClient {
         }
         let request = builder.build()?;
 
-        let response = self
-            .query_request_helper(request, false, RequestKind::QueryPage, None)
-            .await?;
-        self.handle_page(response, false).await
-    }
-
-    pub async fn kill_query(&self, query_id: &str) -> Result<()> {
-        self.end_query(query_id, true, None).await
+        self.query_request_helper(request, false, RequestKind::QueryPage, None)
+            .await
     }
 
     pub async fn final_query(&self, query_id: &str, node_id: Option<&str>) -> Result<()> {
@@ -874,13 +926,22 @@ impl APIClient {
         } else {
             ("final", RequestKind::QueryFinal)
         };
-        let uri = format!("/v1/query/{query_id}/{method}");
-        let endpoint = self.endpoint.join(&uri)?;
+        let mut endpoint = self.endpoint.join("/v1/query/")?;
+        if matches!(query_id, "" | "." | "..") {
+            return Err(Error::BadArgument(
+                "invalid query ID for the query endpoint".into(),
+            ));
+        }
+        endpoint
+            .path_segments_mut()
+            .map_err(|()| Error::BadArgument("invalid query endpoint".into()))?
+            .pop_if_empty()
+            .extend([query_id, method]);
         let headers = self.make_headers(Some(query_id))?;
 
-        info!("{method} query: {uri}");
+        info!("{method} query");
 
-        let mut builder = self.cli.post(endpoint.clone());
+        let mut builder = self.cli.post(endpoint).timeout(self.page_request_timeout);
         if let Some(node_id) = node_id {
             builder = builder.header(HEADER_STICKY_NODE, node_id)
         }
@@ -1235,7 +1296,7 @@ impl APIClient {
     /// Send request with retry and return raw HTTP status/headers/body.
     ///
     /// retry on
-    ///   - network/request/body transient errors
+    ///   - network/request/body transient errors, subject to the replay policy
     ///   - (optional) 503
     ///   - 401 when the configured authentication can be reloaded
     async fn query_request_helper(
@@ -1245,6 +1306,9 @@ impl APIClient {
         request_kind: RequestKind,
         mut submission: Option<&mut QuerySubmission<'_>>,
     ) -> Result<HttpResponseData> {
+        // A detached KILL statement must not be replayed if it could have
+        // executed: a second attempt would report the now-killed ID as missing.
+        let allow_replay = !matches!(request_kind, RequestKind::QueryKill);
         let mut retries = 0;
         let max_retries = self.retry_count;
         let retry_delay = Duration::from_secs(self.retry_delay_secs);
@@ -1268,7 +1332,9 @@ impl APIClient {
                             state.attempt_not_sent(previously_may_have_reached_server);
                         }
                     }
-                    if let Some(reason) = Self::retry_reason_for_reqwest(&err) {
+                    if let Some(reason) = Self::retry_reason_for_reqwest(&err)
+                        .filter(|_| allow_replay || err.is_connect())
+                    {
                         if retries >= max_retries.saturating_sub(1) {
                             return Err(Self::with_request_context(
                                 err,
@@ -1305,9 +1371,9 @@ impl APIClient {
                 Ok(body) => body,
                 Err(err) => {
                     // Once a response has started, the statement may already have run.
-                    if let Some(reason) = Self::retry_reason_for_reqwest(&err)
-                        .filter(|_| !matches!(request_kind, RequestKind::QueryStart))
-                    {
+                    if let Some(reason) = Self::retry_reason_for_reqwest(&err).filter(|_| {
+                        allow_replay && !matches!(request_kind, RequestKind::QueryStart)
+                    }) {
                         if retries >= max_retries.saturating_sub(1) {
                             return Err(Self::with_request_context(
                                 err,
@@ -1338,7 +1404,7 @@ impl APIClient {
                 }
             };
 
-            if retry_if_503 && status == StatusCode::SERVICE_UNAVAILABLE {
+            if retry_if_503 && allow_replay && status == StatusCode::SERVICE_UNAVAILABLE {
                 if retries >= max_retries.saturating_sub(1) {
                     return Ok(HttpResponseData {
                         status,
@@ -1449,6 +1515,14 @@ impl APIClient {
     pub(crate) fn unregister_query_for_heartbeat(&self, query_id: &str) {
         self.queries_need_heartbeat.lock().remove(query_id);
     }
+
+    pub(crate) fn forget_owned_query(&self, query_id: &str) {
+        self.owned_queries.lock().finished(query_id);
+    }
+
+    pub(crate) fn release_owned_query(&self, query_id: &str) {
+        self.owned_queries.lock().result_released(query_id);
+    }
 }
 
 #[cfg(test)]
@@ -1492,8 +1566,9 @@ impl Default for APIClient {
             query_result_format: "json".to_string(),
             closed: AtomicBool::new(false),
             last_query_id: Default::default(),
+            owned_queries: Default::default(),
             server_version: None,
-            capability: Capability,
+            capability: Capability::default(),
             queries_need_heartbeat: Default::default(),
             retry_count: 3,
             retry_delay_secs: 10,

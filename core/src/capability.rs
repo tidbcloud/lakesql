@@ -15,11 +15,15 @@
 use semver::Version;
 
 #[derive(Debug, Default)]
-pub struct Capability;
+pub struct Capability {
+    /// SQL `KILL QUERY '<query_id>'`, including cancellation by the owner.
+    pub kill_query_by_id: bool,
+}
 
 impl Capability {
-    pub fn from_server_version(_version: &Version) -> Self {
-        // Keep this hook for capabilities introduced after the server baseline.
-        Self
+    pub fn from_server_version(version: &Version) -> Self {
+        Self {
+            kill_query_by_id: version > &Version::new(1, 2, 965),
+        }
     }
 }

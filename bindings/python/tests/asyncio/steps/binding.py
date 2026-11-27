@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import os
 import gc
+import re
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 
@@ -62,6 +65,7 @@ async def _(context):
     client = tidbcloudlake_driver.AsyncLakeClient(dsn)
     context.conn = await client.get_conn()
     context.client = client
+    context.dsn = dsn
 
 
 @when("Create a test table")
@@ -454,6 +458,39 @@ async def _(context):
             "Should return meaningful error message"
         )
         print(f"Expected error for non-existent query: {err}")
+
+
+@then("killQuery from another connection should cancel the query")
+async def _(context):
+    server = re.search(r"v(\d+)\.(\d+)\.(\d+)", await context.conn.version())
+    if server is None or tuple(map(int, server.groups())) < (1, 2, 966):
+        print("SKIP: server does not support cross-connection cancellation")
+        return
+
+    url = urlsplit(context.dsn)
+    params = dict(parse_qsl(url.query, keep_blank_values=True))
+    params["wait_time_secs"] = "1"
+    dsn = urlunsplit(url._replace(query=urlencode(params)))
+    target = await tidbcloudlake_driver.AsyncLakeClient(dsn).get_conn()
+    try:
+        rows = await target.query_iter("SELECT sleep(30)")
+        try:
+            query_id = target.last_query_id()
+            assert query_id, "expected the sleeping query's server-side ID"
+            other = await context.client.get_conn()
+            try:
+                await other.kill_query(query_id)
+                assert other.last_query_id() is None, (
+                    "KILL must not change last_query_id"
+                )
+                with tc.assertRaisesRegex(Exception, r"(?i)\[1043\].*(cancel|abort)"):
+                    await asyncio.wait_for(rows.__anext__(), timeout=10)
+            finally:
+                await other.close()
+        finally:
+            rows.close()
+    finally:
+        await target.close()
 
 
 @then("Query should not timeout")

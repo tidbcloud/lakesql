@@ -421,6 +421,11 @@ def _(context):
     print("SKIP")
 
 
+@then("killQuery from another connection should cancel the query")
+def _(context):
+    print("SKIP: cursor does not expose kill_query")
+
+
 @then("Query should not timeout")
 def _(context):
     dsn = os.getenv(
