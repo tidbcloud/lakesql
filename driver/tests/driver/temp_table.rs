@@ -17,7 +17,7 @@ use lake_driver::Client;
 use crate::common::DEFAULT_DSN;
 
 #[tokio::test]
-async fn test_temp_table_password() {
+async fn temp_table_persists_across_requests() {
     let dsn = option_env!("TEST_LAKE_DSN").unwrap_or(DEFAULT_DSN);
     if dsn.starts_with("lake+flight://") {
         return;
