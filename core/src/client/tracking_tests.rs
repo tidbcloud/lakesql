@@ -321,6 +321,52 @@ async fn tracked_pages(client: &Arc<APIClient>, need_progress: bool) -> Pages {
 }
 
 #[tokio::test]
+async fn rest_dsn_catalog_is_applied_at_query_time() {
+    for catalog in [None, Some("default"), Some("iceberg")] {
+        let server = MockServer::new(move |request| {
+            let body: Value = serde_json::from_slice(&request.body).unwrap();
+            match request.path.split('?').next().unwrap() {
+                "/v1/session/login" => {
+                    let expected = if catalog == Some("iceberg") {
+                        json!({})
+                    } else {
+                        json!({"database": "db1"})
+                    };
+                    assert_eq!(body, expected);
+                    MockReply::json(json!({"version": "1.2.925"}))
+                }
+                "/v1/query" => {
+                    let expected_session = match catalog {
+                        Some(name) => json!({"catalog": name, "database": "db1"}),
+                        None => json!({"database": "db1"}),
+                    };
+                    assert_eq!(body["session"], expected_session);
+                    MockReply::json(query_reply(None, json!([["1"]])))
+                }
+                other => panic!("unexpected request: {other}"),
+            }
+        })
+        .await;
+        let dsn = format!(
+            "lake://root:@127.0.0.1:{}/db1?sslmode=disable{}",
+            server.url.port().unwrap(),
+            catalog
+                .map(|name| format!("&catalog={name}"))
+                .unwrap_or_default()
+        );
+        server
+            .wait_for(async {
+                let mut client = APIClient::from_dsn(&dsn).await.unwrap();
+                client.build_client(None).await.unwrap();
+                client.login().await.unwrap();
+                Arc::new(client).query_all("SELECT 1", None).await.unwrap();
+            })
+            .await;
+        server.assert_native_requests(2);
+    }
+}
+
+#[tokio::test]
 async fn mock_handler_panics_keep_the_original_error_and_accept_loop_alive() {
     let server = MockServer::new(|request| {
         assert_ne!(request.path, "/fail", "handler assertion sentinel");

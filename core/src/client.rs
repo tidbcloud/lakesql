@@ -184,6 +184,7 @@ pub struct APIClient {
     disable_login: bool,
     query_result_format: String,
     disable_session_token: bool,
+    disable_server_side_params: bool,
     session_token_info: Option<Arc<Mutex<(SessionTokenInfo, Instant)>>>,
 
     closed: AtomicBool,
@@ -354,6 +355,11 @@ impl APIClient {
         &self.capability
     }
 
+    /// Whether the REST driver should send bound parameters to the server.
+    pub fn server_side_params_enabled(&self) -> bool {
+        !self.disable_server_side_params
+    }
+
     fn set_presign_mode(&self, mode: PresignMode) {
         *self.presign.lock() = mode
     }
@@ -423,6 +429,11 @@ impl APIClient {
                 "warehouse" => {
                     client.warehouse = Mutex::new(Some(v.to_string()));
                 }
+                "catalog" => {
+                    if !v.is_empty() {
+                        session_state.set_catalog(v);
+                    }
+                }
                 "role" => session_state.set_role(v),
                 "sslmode" => match v.as_ref() {
                     "disable" => scheme = "http",
@@ -469,6 +480,17 @@ impl APIClient {
                         _ => {
                             return Err(Error::BadArgument(format!(
                                 "Invalid value for session_token: {v}"
+                            )))
+                        }
+                    }
+                }
+                "server_side_params" => {
+                    client.disable_server_side_params = match v.as_ref() {
+                        "disable" => true,
+                        "enable" => false,
+                        _ => {
+                            return Err(Error::BadArgument(format!(
+                                "Invalid value for server_side_params: {v}"
                             )))
                         }
                     }
@@ -1648,6 +1670,7 @@ impl Default for APIClient {
             route_hint: RouteHintGenerator::new(),
             last_node_id: Default::default(),
             disable_session_token: true,
+            disable_server_side_params: false,
             disable_login: false,
             query_result_format: "json".to_string(),
             session_token_info: None,
@@ -1718,6 +1741,39 @@ mod test {
         assert_eq!(
             *client.warehouse.try_lock().unwrap(),
             Some("wh".to_string())
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn parse_dsn_with_catalog() -> Result<()> {
+        for (options, expected) in [
+            ("", None),
+            ("?catalog=", None),
+            ("?catalog=iceberg", Some("iceberg")),
+        ] {
+            let client = APIClient::from_dsn(&format!("lake://localhost/db1{options}")).await?;
+            assert_eq!(client.current_catalog().as_deref(), expected);
+            assert_eq!(client.current_database().as_deref(), Some("db1"));
+            assert!(client.session_state().settings.is_none());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn parse_dsn_with_server_side_params() -> Result<()> {
+        for (options, enabled) in [
+            ("", true),
+            ("?server_side_params=enable", true),
+            ("?server_side_params=disable", false),
+        ] {
+            let client = APIClient::from_dsn(&format!("lake://localhost/db1{options}")).await?;
+            assert_eq!(client.server_side_params_enabled(), enabled);
+            assert!(client.session_state().settings.is_none());
+        }
+        let result = APIClient::from_dsn("lake://localhost/db1?server_side_params=off").await;
+        assert!(
+            matches!(result, Err(Error::BadArgument(message)) if message.contains("server_side_params"))
         );
         Ok(())
     }
