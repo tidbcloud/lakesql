@@ -423,11 +423,6 @@ impl APIClient {
                         }
                     }
                 }
-                "session_token" => {
-                    return Err(Error::BadArgument(
-                        "DSN option session_token has been removed; omit it to authenticate with the configured credentials".into(),
-                    ));
-                }
                 "server_side_params" => {
                     client.disable_server_side_params = match v.as_ref() {
                         "disable" => true,
@@ -1605,8 +1600,6 @@ mod test {
             ("max_rows_in_buffer", "5000000", "use server defaults"),
             ("max_rows_per_page", "10000", "use server defaults"),
             ("body_format", "arrow", "use query_result_format instead"),
-            ("session_token", "enable", "omit it"),
-            ("session_token", "disable", "omit it"),
         ] {
             let dsn = format!("lake://localhost/?{option}={value}");
             let result = APIClient::from_dsn(&dsn).await;
