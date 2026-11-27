@@ -54,7 +54,7 @@ async fn set_timezone_with_dsn() {
 }
 
 #[tokio::test]
-async fn change_password() {
+async fn change_password_and_reconnect() {
     let dsn = option_env!("TEST_LAKE_DSN").unwrap_or(DEFAULT_DSN);
     if dsn.starts_with("lake+flight://") {
         return;
@@ -69,35 +69,23 @@ async fn change_password() {
         .unwrap();
     assert_eq!(n, 0);
 
-    // Extract host from the original DSN to avoid hardcoding localhost:8000
-    let parsed = url::Url::parse(dsn).unwrap();
-    let host = parsed.host_str().unwrap();
-    let port = parsed.port().unwrap_or(443);
-    let db = parsed.path().trim_start_matches('/');
-    let db = if db.is_empty() { "default" } else { db };
-    // Preserve extra query params (warehouse, sslmode, etc.) from original DSN
-    let mut extra_params = String::new();
-    for (k, v) in parsed.query_pairs() {
-        if k != "session_token" {
-            extra_params.push_str(&format!("&{}={}", k, v));
-        }
-    }
-    let user_dsn = format!(
-        "lake://u1:p1@{}:{}/{}?session_token=enable{}",
-        host, port, db, extra_params,
+    let mut user_dsn = url::Url::parse(dsn).unwrap();
+    user_dsn.set_username("u1").unwrap();
+    user_dsn.set_password(Some("p1")).unwrap();
+    let user_conn = Client::new(user_dsn.to_string()).get_conn().await.unwrap();
+    assert!(user_conn.query_row("select 1").await.unwrap().is_some());
+    user_conn.close().await.unwrap();
+
+    assert_eq!(
+        conn.exec("alter user u1 identified by 'p2'").await.unwrap(),
+        0
     );
-    let client = Client::new(user_dsn);
-    let conn = client.get_conn().await.unwrap();
 
-    let n = conn
-        .exec("alter user u1 identified by 'p2' ")
-        .await
-        .unwrap();
-    assert_eq!(n, 0);
-
-    let row = conn.query_row("select 1").await.unwrap();
-    assert!(row.is_some());
-    let row = row.unwrap();
+    user_dsn.set_password(Some("p2")).unwrap();
+    let user_conn = Client::new(user_dsn.to_string()).get_conn().await.unwrap();
+    let row = user_conn.query_row("select 1").await.unwrap().unwrap();
     let (val,): (i64,) = row.try_into().unwrap();
     assert_eq!(val, 1);
+    user_conn.close().await.unwrap();
+    conn.exec("drop user u1").await.unwrap();
 }
