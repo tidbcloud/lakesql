@@ -35,8 +35,7 @@ struct MockRequest {
 
 struct MockReply {
     status: u16,
-    body: Vec<u8>,
-    content_type: &'static str,
+    body: String,
     headers: Vec<(&'static str, &'static str)>,
     truncated: bool,
     gate: Option<Arc<Notify>>,
@@ -46,8 +45,7 @@ impl MockReply {
     fn json(body: Value) -> Self {
         Self {
             status: 200,
-            body: serde_json::to_vec(&body).unwrap(),
-            content_type: "application/json",
+            body: body.to_string(),
             headers: vec![],
             truncated: false,
             gate: None,
@@ -185,18 +183,17 @@ async fn handle_connection(
         gate.notified().await;
     }
     let mut response = format!(
-        "HTTP/1.1 {} Mock\r\nContent-Length: {}\r\nContent-Type: {}\r\nConnection: close\r\n",
+        "HTTP/1.1 {} Mock\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n",
         reply.status,
         reply.body.len() + usize::from(reply.truncated),
-        reply.content_type,
     );
     for (name, value) in reply.headers {
         response.push_str(&format!("{name}: {value}\r\n"));
     }
     response.push_str("\r\n");
+    response.push_str(&reply.body);
     // Dropping Pages can deliberately close a pending connection.
     let _ = stream.write_all(response.as_bytes()).await;
-    let _ = stream.write_all(&reply.body).await;
 }
 
 struct MockServer {
@@ -488,6 +485,7 @@ async fn terminal_response_unregisters_before_none_or_drop() {
             // Nonempty terminal pages must release tracking before a caller
             // polls None or drops Pages; neither is allowed to hide the bug.
             assert!(client.queries_need_heartbeat.lock().is_empty());
+            assert!(client.owned_queries.lock().kill_target("q1").is_none());
             client.try_heartbeat().await.unwrap();
             assert!(pages.next().await.is_none());
             drop(pages);
@@ -571,7 +569,7 @@ async fn page_errors_unregister_before_none_or_drop() {
             match failure {
                 "http" => MockReply {
                     status: 404,
-                    body: b"not found".to_vec(),
+                    body: "not found".into(),
                     ..MockReply::json(Value::Null)
                 },
                 "decode" => MockReply::json(json!({"invalid":"response"})),
@@ -612,6 +610,7 @@ async fn early_drop_finalizes_once_on_the_tracked_node() {
     let pages = tracked_pages(&client, false).await;
     drop(pages);
     assert!(client.queries_need_heartbeat.lock().is_empty());
+    assert_eq!(client.owned_queries.lock().is_reading("q1"), Some(false));
     server.wait_for(finalized.notified()).await;
     client.finalize_query("q1");
     client.try_heartbeat().await.unwrap();
